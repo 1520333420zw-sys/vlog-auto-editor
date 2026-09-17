@@ -1,0 +1,32 @@
+# Personal/raw media must stay local
+workspace/raw/
+workspace/proxy/
+workspace/output/
+workspace/transcripts/
+
+# Generated working data
+workspace/manifests/*.json
+workspace/project/*.generated.json
+workspace/subtitles/*.srt
+workspace/subtitles/*.ass
+
+# Video/audio
+*.mov
+*.MOV
+*.mp4
+*.MP4
+*.m4v
+*.wav
+*.aac
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.env
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

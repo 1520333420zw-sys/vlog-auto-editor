@@ -46,4 +46,28 @@ workspace/
 6. Generate/import bilingual subtitle tracks.
 7. Export a 1080p review file.
 
+## Windows quick start
+
+Install Python 3.11+ and FFmpeg (both `ffmpeg` and `ffprobe` must be on `PATH`). From PowerShell:
+
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e .
+python -m vlog_editor doctor
+python -m vlog_editor init
+Copy-Item examples\rough_cut.example.json workspace\project\rough_cut.json
+Copy-Item examples\subtitles.example.json workspace\project\subtitles.json
+python -m vlog_editor scan
+python -m vlog_editor proxy
+python -m vlog_editor render --project workspace\project\rough_cut.json
+python -m vlog_editor subtitles --input workspace\project\subtitles.json
+```
+
+Edit the sample JSON files to reference your own local clips and human-authored bilingual text. The renderer makes hard cuts on a 1920x1080/30fps canvas and preserves source audio where available. Subtitle generation never translates or invents text. A generated `.srt` and `.ass` can be reviewed in Jianying/CapCut; a burned-in review render is intentionally left to the editor in Phase 1.
+
+Run tests with `python -m pytest`.
+
+Known limitations: iPhone HDR/HEVC handling depends on the installed FFmpeg build and may require later color-management work; rotation metadata is collected and FFmpeg is asked to honor it, but unusual vendor metadata should be checked visually. Real media is required for an end-to-end render smoke test.
+
 The system is intentionally semi-automatic: editorial judgment remains with ChatGPT/user; automation handles repetitive media operations.

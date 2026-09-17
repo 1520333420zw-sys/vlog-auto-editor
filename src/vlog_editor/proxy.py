@@ -18,6 +18,8 @@ def generate_proxies(raw: Path, output: Path, force: bool = False, dry_run: bool
         command = ["ffmpeg", "-y", "-i", str(source), "-vf", "scale='min(1280,iw)':'min(1280,ih)':force_original_aspect_ratio=decrease,fps=30", "-c:v", "libx264", "-preset", "veryfast", "-crf", "28"]
         if probe.get("streams"):
             command += ["-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(target)]
+        else:
+            command += ["-an", "-movflags", "+faststart", str(target)]
         commands.append(command)
         if not dry_run:
             completed = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace")

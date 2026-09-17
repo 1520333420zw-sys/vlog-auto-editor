@@ -34,6 +34,7 @@ def render(project: Path, workspace: Path, dry_run: bool = False) -> list[str]:
     filters = []
     input_index = 0
     for i, clip in enumerate(plan["clips"]):
+        video_index = input_index
         source = resolve_workspace_path(clip["source"], workspace)
         command += ["-ss", str(parse_time(clip["in"])), "-to", str(parse_time(clip["out"])), "-i", str(source)]
         streams = run_json_command([require_tool("ffprobe"), "-v", "error", "-show_streams", "-of", "json", str(source)]).get("streams", [])
@@ -43,7 +44,7 @@ def render(project: Path, workspace: Path, dry_run: bool = False) -> list[str]:
             command += ["-f", "lavfi", "-t", str(parse_time(clip["out"]) - parse_time(clip["in"])), "-i", "anullsrc=channel_layout=stereo:sample_rate=48000"]
             audio_index = input_index + 1
             input_index += 1
-        filters.append(build_filter(input_index, clip, width, height, fps).replace(f"[{input_index}:a]", f"[{audio_index}:a]"))
+        filters.append(build_filter(video_index, clip, width, height, fps).replace(f"[{video_index}:a]", f"[{audio_index}:a]"))
         input_index += 1
     concat_inputs = "".join(f"[v{i}][a{i}]" for i in range(len(filters)))
     filters.append(f"{concat_inputs}concat=n={len(filters)}:v=1:a=1[vout][aout]")

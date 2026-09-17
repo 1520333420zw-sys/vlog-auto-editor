@@ -1,0 +1,18 @@
+{
+  "output": "workspace/output/VLOG_01_V1.mp4",
+  "video": {"width": 1920, "height": 1080, "fps": 30},
+  "clips": [
+    {
+      "source": "workspace/raw/IMG_0001.MOV",
+      "in": "00:00:02.000",
+      "out": "00:00:05.500",
+      "audio_gain_db": 0
+    },
+    {
+      "source": "workspace/raw/IMG_0002.MOV",
+      "in": "00:00:01.250",
+      "out": "00:00:04.000",
+      "audio_gain_db": -2
+    }
+  ]
+}

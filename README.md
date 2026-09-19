@@ -34,6 +34,7 @@ workspace/
   project/      # edit plans / timelines
   subtitles/    # bilingual subtitle files
   output/       # rendered V1 exports (local only)
+  review/       # thumbnails, contact sheets, and review catalog (local only)
 ```
 
 ## Phase 1
@@ -60,6 +61,7 @@ Copy-Item examples\rough_cut.example.json workspace\project\rough_cut.json
 Copy-Item examples\subtitles.example.json workspace\project\subtitles.json
 python -m vlog_editor scan
 python -m vlog_editor proxy
+python -m vlog_editor review
 python -m vlog_editor render --project workspace\project\rough_cut.json
 python -m vlog_editor subtitles --input workspace\project\subtitles.json
 ```

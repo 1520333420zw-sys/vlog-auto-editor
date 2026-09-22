@@ -30,8 +30,19 @@ def test_thumbnail_timestamps_and_labeled_commands():
     sheet = build_contact_sheet_command([__import__("pathlib").Path("a.jpg"), __import__("pathlib").Path("b.jpg"), __import__("pathlib").Path("c.jpg")], __import__("pathlib").Path("sheet.jpg"), 2)
     assert "C001 · 00\\:07" in thumb[thumb.index("-vf") + 1]
     assert thumb[thumb.index("-pix_fmt") + 1] == "yuvj420p"
-    assert "tile=2x2" in sheet[sheet.index("-filter_complex") + 1]
+    assert "xstack=inputs=3" in sheet[sheet.index("-filter_complex") + 1]
     assert sheet.count("-i") == 3
+
+
+def test_contact_sheet_command_handles_single_image_full_grid_and_incomplete_row():
+    path = __import__("pathlib").Path
+    single = build_contact_sheet_command([path("one.jpg")], path("single.jpg"), 1)
+    full = build_contact_sheet_command([path("a.jpg"), path("b.jpg"), path("c.jpg"), path("d.jpg")], path("full.jpg"), 2)
+    incomplete = build_contact_sheet_command([path("a.jpg"), path("b.jpg"), path("c.jpg")], path("partial.jpg"), 2)
+    assert "xstack=inputs=1:layout=0_0" in single[single.index("-filter_complex") + 1]
+    assert "xstack=inputs=4:layout=0_0|328_0|0_188|328_188" in full[full.index("-filter_complex") + 1]
+    assert "xstack=inputs=3:layout=0_0|328_0|0_188:fill=black" in incomplete[incomplete.index("-filter_complex") + 1]
+    assert incomplete[incomplete.index("-i") + 1] == "a.jpg"
 
 
 def test_thumbnail_filter_uses_discovered_font_with_windows_safe_path(monkeypatch, tmp_path):

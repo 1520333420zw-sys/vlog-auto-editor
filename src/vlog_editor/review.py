@@ -115,8 +115,13 @@ def build_contact_sheet_command(thumbnails: list[Path], output: Path, columns: i
     command = ["ffmpeg", "-y"]
     for thumbnail in thumbnails:
         command += ["-loop", "1", "-i", str(thumbnail)]
-    inputs = "".join(f"[{index}:v]" for index in range(len(thumbnails)))
-    command += ["-filter_complex", f"{inputs}tile={columns}x{rows}:padding=4:margin=4[v]", "-map", "[v]", "-frames:v", "1", str(output)]
+    normalized = []
+    for index in range(len(thumbnails)):
+        normalized.append(f"[{index}:v]scale={DEFAULT_THUMBNAIL_WIDTH}:180:force_original_aspect_ratio=decrease,pad={DEFAULT_THUMBNAIL_WIDTH}:180:(ow-iw)/2:(oh-ih)/2:color=black[v{index}]")
+    layout = "|".join(f"{column * (DEFAULT_THUMBNAIL_WIDTH + 8)}_{row * 188}" for index in range(len(thumbnails)) for row, column in [(index // columns, index % columns)])
+    inputs = "".join(f"[v{index}]" for index in range(len(thumbnails)))
+    normalized.append(f"{inputs}xstack=inputs={len(thumbnails)}:layout={layout}:fill=black[v]")
+    command += ["-filter_complex", ";".join(normalized), "-map", "[v]", "-frames:v", "1", str(output)]
     return command
 
 

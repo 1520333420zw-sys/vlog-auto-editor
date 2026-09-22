@@ -24,10 +24,12 @@ def test_display_ids_and_orientation():
 
 def test_thumbnail_timestamps_and_labeled_commands():
     assert thumbnail_timestamps(14, 3) == [0.0, 6.75, 13.5]
+    assert thumbnail_timestamps(2, 3, 2) == [0.0, 0.75, 1.5]
     assert [format_timestamp(value) for value in (0, 7, 84, 3600)] == ["00:00", "00:07", "01:24", "01:00:00"]
     thumb = build_thumbnail_command(__import__("pathlib").Path("x y/旅行.MOV"), __import__("pathlib").Path("out.jpg"), 7, "C001 · 00:07", 320)
     sheet = build_contact_sheet_command([__import__("pathlib").Path("a.jpg"), __import__("pathlib").Path("b.jpg"), __import__("pathlib").Path("c.jpg")], __import__("pathlib").Path("sheet.jpg"), 2)
     assert "C001 · 00\\:07" in thumb[thumb.index("-vf") + 1]
+    assert thumb[thumb.index("-pix_fmt") + 1] == "yuvj420p"
     assert "tile=2x2" in sheet[sheet.index("-filter_complex") + 1]
     assert sheet.count("-i") == 3
 

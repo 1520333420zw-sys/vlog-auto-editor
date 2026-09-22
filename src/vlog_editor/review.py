@@ -46,12 +46,13 @@ def orientation(width: int | None, height: int | None, rotation: int | None) -> 
     return "portrait" if (height > width) ^ rotated else "landscape"
 
 
-def thumbnail_timestamps(duration: float, count: int = DEFAULT_THUMBNAIL_COUNT) -> list[float]:
+def thumbnail_timestamps(duration: float, count: int = DEFAULT_THUMBNAIL_COUNT, fps: float | None = None) -> list[float]:
     if count < 1:
         raise ValueError("thumbnail count must be at least 1")
     if duration <= 0 or count == 1:
         return [0.0]
-    end = max(0.0, duration - min(0.5, duration / 10))
+    frame_interval = 1.0 / fps if fps and fps > 0 else 0.5
+    end = max(0.0, duration - max(0.5, frame_interval))
     return [round(end * index / (count - 1), 3) for index in range(count)]
 
 
@@ -102,7 +103,7 @@ def _label_filter(label: str, width: int) -> str:
 
 
 def build_thumbnail_command(source: Path, output: Path, timestamp: float, label: str, width: int) -> list[str]:
-    return ["ffmpeg", "-y", "-ss", str(timestamp), "-i", str(source), "-frames:v", "1", "-vf", _label_filter(label, width), str(output)]
+    return ["ffmpeg", "-y", "-ss", str(timestamp), "-i", str(source), "-frames:v", "1", "-vf", _label_filter(label, width), "-pix_fmt", "yuvj420p", str(output)]
 
 
 def build_contact_sheet_command(thumbnails: list[Path], output: Path, columns: int) -> list[str]:
@@ -158,7 +159,7 @@ def build_review_package(workspace: Path, force: bool = False, dry_run: bool = F
         file_size = source.stat().st_size
         identity = clip_id(relative, file_size)
         short_id = display_id(index)
-        timestamps = thumbnail_timestamps(float(item.get("duration", 0)), thumbnail_count)
+        timestamps = thumbnail_timestamps(float(item.get("duration", 0)), thumbnail_count, item.get("fps"))
         thumbnail_refs = [f"thumbnails/{identity}-{number:03d}.jpg" for number in range(len(timestamps))]
         sheet_ref = f"contact_sheets/{short_id}-{identity}.jpg"
         proxy_ref = str((Path("proxy") / Path(relative).with_suffix(".mp4")).as_posix())

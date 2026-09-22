@@ -14,6 +14,7 @@ SCHEMA_VERSION = 1
 DEFAULT_THUMBNAIL_COUNT = 6
 DEFAULT_THUMBNAIL_WIDTH = 320
 DEFAULT_SHEET_COLUMNS = 3
+STATE_FILENAME = ".review-inputs.json"
 
 
 def normalize_relative_path(value: str | Path) -> str:
@@ -27,6 +28,13 @@ def clip_id(relative_path: str | Path, file_size: int) -> str:
 
 def display_id(index: int) -> str:
     return f"C{index:03d}"
+
+
+def format_timestamp(seconds: float) -> str:
+    total = max(0, int(round(seconds)))
+    hours, remainder = divmod(total, 3600)
+    minutes, secs = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}" if hours else f"{minutes:02d}:{secs:02d}"
 
 
 def orientation(width: int | None, height: int | None, rotation: int | None) -> str | None:
@@ -67,15 +75,26 @@ def _asset_path(review_root: Path, relative: str) -> Path:
 
 def _label_filter(label: str, width: int) -> str:
     escaped = label.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
-    return f"scale={width}:-2:force_original_aspect_ratio=decrease,pad={width}:ih:(ow-iw)/2:0:color=black,drawtext=text='{escaped}':x=8:y=8:fontsize=20:fontcolor=white:box=1:boxcolor=black@0.65"
+    height = width * 9 // 16
+    return f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black,drawtext=text='{escaped}':x=8:y=8:fontsize=20:fontcolor=white:box=1:boxcolor=black@0.65"
 
 
 def build_thumbnail_command(source: Path, output: Path, timestamp: float, label: str, width: int) -> list[str]:
     return ["ffmpeg", "-y", "-ss", str(timestamp), "-i", str(source), "-frames:v", "1", "-vf", _label_filter(label, width), str(output)]
 
 
-def build_contact_sheet_command(thumbnail_list: Path, output: Path, columns: int, rows: int) -> list[str]:
-    return ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(thumbnail_list), "-vf", f"tile={columns}x{rows}:padding=4:margin=4", "-frames:v", "1", str(output)]
+def build_contact_sheet_command(thumbnails: list[Path], output: Path, columns: int) -> list[str]:
+    if not thumbnails:
+        raise ValueError("contact sheet requires at least one thumbnail")
+    if columns < 1:
+        raise ValueError("contact sheet columns must be at least 1")
+    rows = math.ceil(len(thumbnails) / columns)
+    command = ["ffmpeg", "-y"]
+    for thumbnail in thumbnails:
+        command += ["-loop", "1", "-i", str(thumbnail)]
+    inputs = "".join(f"[{index}:v]" for index in range(len(thumbnails)))
+    command += ["-filter_complex", f"{inputs}tile={columns}x{rows}:padding=4:margin=4[v]", "-map", "[v]", "-frames:v", "1", str(output)]
+    return command
 
 
 def _run(command: list[str], dry_run: bool) -> None:
@@ -103,6 +122,10 @@ def build_review_package(workspace: Path, force: bool = False, dry_run: bool = F
     previous_path = review_root / "review_manifest.json"
     previous = json.loads(previous_path.read_text(encoding="utf-8")) if previous_path.exists() else {}
     previous_by_id = {item["clip_id"]: item for item in previous.get("clips", [])}
+    state_path = review_root / STATE_FILENAME
+    state = json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
+    state_by_id = {item["clip_id"]: item for item in state.get("clips", [])}
+    cache_settings = {"thumbnail_count": thumbnail_count, "contact_sheet_columns": sheet_columns}
     scanned = json.loads(manifest_path.read_text(encoding="utf-8"))
     ordered = sorted(scanned, key=lambda item: (item.get("creation_time") or "9999", item.get("filename", "").casefold(), item.get("path", "").casefold()))
     clips: list[dict[str, Any]] = []
@@ -130,7 +153,6 @@ def build_review_package(workspace: Path, force: bool = False, dry_run: bool = F
             "codec": item.get("codec"),
             "has_audio": item.get("audio", False),
             "creation_time": item.get("creation_time"),
-            "mtime_ns": source.stat().st_mtime_ns,
             "file_size": file_size,
             "proxy": {"relative_path": proxy_ref},
             "thumbnails": [{"index": number, "timestamp_seconds": timestamp, "relative_path": ref} for number, (timestamp, ref) in enumerate(zip(timestamps, thumbnail_refs))],
@@ -138,37 +160,35 @@ def build_review_package(workspace: Path, force: bool = False, dry_run: bool = F
             "editorial": _editorial(previous_by_id.get(identity)),
         }
         clips.append(clip)
-        changed = force or previous_by_id.get(identity, {}).get("mtime_ns") != clip["mtime_ns"]
+        current_state = {"clip_id": identity, "relative_path": relative, "file_size": file_size, "mtime_ns": source.stat().st_mtime_ns}
+        changed = force or state.get("settings") != cache_settings or state_by_id.get(identity) != current_state
         for thumb, timestamp in zip(thumbnail_refs, timestamps):
             output = _asset_path(review_root, thumb)
             if changed or not output.exists():
-                commands.append(build_thumbnail_command(source, output, timestamp, f"{short_id} {timestamp:05.2f}", DEFAULT_THUMBNAIL_WIDTH))
+                commands.append(build_thumbnail_command(source, output, timestamp, f"{short_id} · {format_timestamp(timestamp)}", DEFAULT_THUMBNAIL_WIDTH))
         sheet_output = _asset_path(review_root, sheet_ref)
         if changed or not sheet_output.exists():
-            list_path = review_root / f".{identity}.concat.txt"
-            commands.append(build_contact_sheet_command(list_path, sheet_output, sheet_columns, math.ceil(len(timestamps) / sheet_columns)))
+            commands.append(build_contact_sheet_command([_asset_path(review_root, ref) for ref in thumbnail_refs], sheet_output, sheet_columns))
     if dry_run:
         return {"clips": clips, "commands": commands}
     (review_root / "thumbnails").mkdir(parents=True, exist_ok=True)
     (review_root / "contact_sheets").mkdir(parents=True, exist_ok=True)
     for clip in clips:
-        changed = force or previous_by_id.get(clip["clip_id"], {}).get("mtime_ns") != clip["mtime_ns"]
+        source = raw / Path(clip["source"]["relative_path"])
+        current_state = {"clip_id": clip["clip_id"], "relative_path": clip["source"]["relative_path"], "file_size": source.stat().st_size, "mtime_ns": source.stat().st_mtime_ns}
+        changed = force or state.get("settings") != cache_settings or state_by_id.get(clip["clip_id"]) != current_state
         for thumbnail in clip["thumbnails"]:
             output = _asset_path(review_root, thumbnail["relative_path"])
-            source = raw / Path(clip["source"]["relative_path"])
             if changed or not output.exists():
-                _run(build_thumbnail_command(source, output, thumbnail["timestamp_seconds"], f"{clip['display_id']} {thumbnail['timestamp_seconds']:05.2f}", DEFAULT_THUMBNAIL_WIDTH), False)
+                _run(build_thumbnail_command(source, output, thumbnail["timestamp_seconds"], f"{clip['display_id']} · {format_timestamp(thumbnail['timestamp_seconds'])}", DEFAULT_THUMBNAIL_WIDTH), False)
         sheet = clip["contact_sheet"]["relative_path"]
         sheet_output = _asset_path(review_root, sheet)
         if not changed and sheet_output.exists():
             continue
-        list_path = review_root / f".{clip['clip_id']}.concat.txt"
-        lines = [f"file '{_asset_path(review_root, thumbnail['relative_path']).as_posix()}'" for thumbnail in clip["thumbnails"]]
-        list_path.write_text("\n".join(lines), encoding="utf-8")
-        try:
-            _run(build_contact_sheet_command(list_path, sheet_output, sheet_columns, math.ceil(len(clip["thumbnails"]) / sheet_columns)), False)
-        finally:
-            list_path.unlink(missing_ok=True)
+        thumbnails = [_asset_path(review_root, thumbnail["relative_path"]) for thumbnail in clip["thumbnails"]]
+        _run(build_contact_sheet_command(thumbnails, sheet_output, sheet_columns), False)
     portable = {"schema_version": SCHEMA_VERSION, "settings": {"thumbnail_width": DEFAULT_THUMBNAIL_WIDTH, "thumbnail_count": thumbnail_count, "contact_sheet_columns": sheet_columns}, "clips": clips}
+    cache_state = {"schema_version": SCHEMA_VERSION, "settings": cache_settings, "clips": [{"clip_id": clip["clip_id"], "relative_path": clip["source"]["relative_path"], "file_size": (raw / Path(clip["source"]["relative_path"])).stat().st_size, "mtime_ns": (raw / Path(clip["source"]["relative_path"])).stat().st_mtime_ns} for clip in clips]}
     review_root.joinpath("review_manifest.json").write_text(json.dumps(portable, ensure_ascii=False, indent=2), encoding="utf-8")
+    review_root.joinpath(STATE_FILENAME).write_text(json.dumps(cache_state, ensure_ascii=False, indent=2), encoding="utf-8")
     return portable

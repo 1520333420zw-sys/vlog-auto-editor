@@ -6,6 +6,7 @@ import subprocess
 import pytest
 
 from vlog_editor.review import clip_id, display_id, orientation, thumbnail_timestamps, format_timestamp, build_contact_sheet_command, build_thumbnail_command, build_review_package, _asset_path
+import vlog_editor.review as review_module
 
 
 def test_clip_id_is_stable_across_mtime_changes():
@@ -29,6 +30,18 @@ def test_thumbnail_timestamps_and_labeled_commands():
     assert "C001 · 00\\:07" in thumb[thumb.index("-vf") + 1]
     assert "tile=2x2" in sheet[sheet.index("-filter_complex") + 1]
     assert sheet.count("-i") == 3
+
+
+def test_thumbnail_filter_uses_discovered_font_with_windows_safe_path(monkeypatch, tmp_path):
+    font = tmp_path / "Windows Fonts" / "Arial.ttf"
+    font.parent.mkdir()
+    font.write_bytes(b"font")
+    monkeypatch.setattr(review_module, "_find_font_file", lambda: font)
+    command = build_thumbnail_command(__import__("pathlib").Path("C:/media/clip.MOV"), __import__("pathlib").Path("C:/review/frame.jpg"), 0, "C001 · 00:00", 320)
+    filter_text = command[command.index("-vf") + 1]
+    assert "fontfile='" in filter_text
+    assert "Windows Fonts/Arial.ttf" in filter_text
+    assert "C:/" not in filter_text or "C\\:/" in filter_text
 
 
 def test_review_manifest_is_portable_and_preserves_editorial_fields(monkeypatch, tmp_path):

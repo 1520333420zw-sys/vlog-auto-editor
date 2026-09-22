@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
+import sys
 import subprocess
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -73,10 +75,30 @@ def _asset_path(review_root: Path, relative: str) -> Path:
     return path
 
 
+def _find_font_file() -> Path | None:
+    candidates: list[Path] = []
+    if sys.platform.startswith("win"):
+        windows_dir = os.environ.get("WINDIR")
+        if windows_dir:
+            fonts = Path(windows_dir) / "Fonts"
+            candidates.extend(fonts / name for name in ("arial.ttf", "segoeui.ttf", "calibri.ttf"))
+    elif sys.platform == "darwin":
+        candidates.extend(Path(path) for path in ("/System/Library/Fonts/Supplemental/Arial.ttf", "/System/Library/Fonts/Supplemental/Helvetica.ttc"))
+    else:
+        candidates.extend(Path(path) for path in ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf"))
+    return next((path for path in candidates if path.is_file()), None)
+
+
+def _filter_path(path: Path) -> str:
+    return str(path).replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
+
+
 def _label_filter(label: str, width: int) -> str:
     escaped = label.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
     height = width * 9 // 16
-    return f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black,drawtext=text='{escaped}':x=8:y=8:fontsize=20:fontcolor=white:box=1:boxcolor=black@0.65"
+    font = _find_font_file()
+    font_option = f":fontfile='{_filter_path(font)}'" if font else ""
+    return f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black,drawtext=text='{escaped}'{font_option}:x=8:y=8:fontsize=20:fontcolor=white:box=1:boxcolor=black@0.65"
 
 
 def build_thumbnail_command(source: Path, output: Path, timestamp: float, label: str, width: int) -> list[str]:

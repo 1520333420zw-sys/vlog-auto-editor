@@ -3,6 +3,7 @@ workspace/raw/
 workspace/proxy/
 workspace/output/
 workspace/transcripts/
+workspace/review/
 
 # Generated working data
 workspace/manifests/*.json

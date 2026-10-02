@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 
 from .plan import write_generated_plan
@@ -29,7 +30,7 @@ def main() -> int:
     analyze_parser = sub.add_parser("analyze"); analyze_parser.add_argument("--input", type=Path); analyze_parser.add_argument("--output", type=Path); analyze_parser.add_argument("--dry-run", action="store_true")
     transcript_parser = sub.add_parser("transcript"); transcript_parser.add_argument("--input", type=Path, required=True); transcript_parser.add_argument("--output", type=Path)
     autoedit_parser = sub.add_parser("autoedit"); autoedit_parser.add_argument("--review", type=Path); autoedit_parser.add_argument("--analysis", type=Path); autoedit_parser.add_argument("--output", type=Path); autoedit_parser.add_argument("--target-duration", type=float); autoedit_parser.add_argument("--dry-run", action="store_true")
-    build_parser = sub.add_parser("build"); build_parser.add_argument("--force", action="store_true"); build_parser.add_argument("--dry-run", action="store_true"); build_parser.add_argument("--target-duration", type=float); build_parser.add_argument("--transcript", type=Path); build_parser.add_argument("--generate-subtitles", action="store_true"); build_parser.add_argument("--config", type=Path)
+    build_parser = sub.add_parser("build"); build_parser.add_argument("--force", action="store_true"); build_parser.add_argument("--dry-run", action="store_true"); build_parser.add_argument("--target-duration", type=float); build_parser.add_argument("--transcript", type=Path); build_parser.add_argument("--generate-subtitles", action="store_true"); build_parser.add_argument("--burn-subtitles", action="store_true"); build_parser.add_argument("--bgm", type=Path); build_parser.add_argument("--bgm-gain", type=float); build_parser.add_argument("--lut", type=Path); build_parser.add_argument("--config", type=Path)
     args = parser.parse_args(); workspace = args.workspace
     if args.command == "doctor":
         from .common import require_tool
@@ -62,7 +63,19 @@ def main() -> int:
         config_path = args.config or workspace / "project" / "vlog_config.json"
         config = validate_finish_config(json.loads(config_path.read_text(encoding="utf-8"))) if config_path.exists() else {}
         transcript_input = args.transcript or (Path(config["transcript_path"]) if config.get("transcript_path") else None)
-        subtitles_enabled = args.generate_subtitles or config.get("generate_subtitles", False)
+        subtitles_enabled = args.generate_subtitles or config.get("generate_subtitles", False) or args.burn_subtitles or config.get("burn_subtitles", False)
+        burn_subtitles = args.burn_subtitles or config.get("burn_subtitles", False)
+        bgm_path = args.bgm or (Path(config["bgm_path"]) if config.get("bgm_path") else None)
+        bgm_gain = args.bgm_gain if args.bgm_gain is not None else config.get("bgm_gain_db", -18.0)
+        lut_path = args.lut or (Path(config["lut_path"]) if config.get("lut_path") else None)
+        if bgm_path:
+            bgm_path = bgm_path.resolve()
+            if not bgm_path.is_file() or isinstance(bgm_gain, bool) or not isinstance(bgm_gain, (int, float)) or not math.isfinite(float(bgm_gain)) or not -60 <= bgm_gain <= 0:
+                raise ValueError("bgm must reference an existing local audio file with gain between -60 and 0 dB")
+        if lut_path:
+            lut_path = lut_path.resolve()
+            if lut_path.suffix.lower() != ".cube" or not lut_path.is_file():
+                raise ValueError("lut must reference an existing local .cube file")
         manifest_path = workspace / "manifests" / "media_manifest.json"
         review_path = workspace / "review" / "review_manifest.json"
         if args.dry_run:
@@ -80,6 +93,32 @@ def main() -> int:
         artifact = write_autoedit(review_path, workspace / "project" / "autoedit.json", workspace / "analysis" / "media_analysis.json", args.target_duration, args.dry_run, analysis_data=analysis)
         plan = plan_from_autoedit(artifact)
         plan["audio_normalization"] = config.get("audio_normalization", False)
+        if bgm_path:
+            plan["bgm"] = {"path": str(bgm_path), "gain_db": bgm_gain}
+        if lut_path:
+            plan["lut"] = str(lut_path)
+        transcript_path = workspace / "transcript" / "transcript.json"
+        transcript_input = args.transcript or (Path(config["transcript_path"]) if config.get("transcript_path") else None)
+        if transcript_input:
+            print("[optional] import transcript")
+            from .transcript import import_transcript
+            import_transcript(transcript_input, transcript_path, args.dry_run)
+        elif transcript_path.exists():
+            transcript_input = transcript_path
+        else:
+            print("[optional] transcript skipped (no local transcript supplied)")
+        subtitle_transcript = transcript_input if args.dry_run and transcript_input else transcript_path
+        if subtitles_enabled:
+            if not subtitle_transcript or not subtitle_transcript.exists():
+                raise FileNotFoundError("Subtitle generation was requested, but no transcript JSON exists")
+            from .transcript import subtitle_source
+            subtitle_input = subtitle_source(subtitle_transcript, workspace / "transcript" / "transcript_subtitles.json", args.dry_run)
+            if not args.dry_run:
+                write_subtitles(subtitle_input, workspace / "subtitles")
+            if burn_subtitles:
+                plan["subtitle_file"] = str(workspace / "subtitles" / "transcript_subtitles.srt")
+        else:
+            print("[optional] subtitles skipped (not configured)")
         if args.dry_run:
             print(json.dumps(plan, ensure_ascii=False, indent=2))
         else:
@@ -87,23 +126,4 @@ def main() -> int:
             plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             print("[5/5] render")
             render(plan_path, workspace, False)
-        transcript_path = workspace / "transcript" / "transcript.json"
-        if transcript_input:
-            print("[optional] import transcript")
-            from .transcript import import_transcript
-            import_transcript(transcript_input, transcript_path, args.dry_run)
-        else:
-            print("[optional] transcript skipped (no local transcript supplied)")
-        if subtitles_enabled:
-            subtitle_transcript = transcript_input if args.dry_run and transcript_input else transcript_path
-            if not subtitle_transcript.exists():
-                raise FileNotFoundError("Subtitle generation was requested, but no transcript.json exists")
-            if args.dry_run:
-                print("[optional] subtitles would be generated from transcript.json")
-            else:
-                from .transcript import subtitle_source
-                subtitle_input = subtitle_source(subtitle_transcript, workspace / "transcript" / "transcript_subtitles.json")
-                write_subtitles(subtitle_input, workspace / "subtitles")
-        else:
-            print("[optional] subtitles skipped (not configured)")
     return 0

@@ -23,6 +23,13 @@ def test_reject_wins_over_automatic_fallback():
         build_autoedit(review(keep=False))
 
 
+def test_autoedit_rejects_unsafe_source_path():
+    bad = review()
+    bad["clips"][0]["source"]["relative_path"] = "../outside.mp4"
+    with pytest.raises(ValueError, match="workspace/raw"):
+        build_autoedit(bad)
+
+
 def test_automatic_fallback_is_deterministic_and_converts_to_plan():
     artifact = build_autoedit(review(), {"clips": [{"source": {"relative_path": "a clip.mp4"}, "signals": {"audio_activity": "none"}}]})
     assert artifact == build_autoedit(review(), {"clips": [{"source": {"relative_path": "a clip.mp4"}, "signals": {"audio_activity": "none"}}]})

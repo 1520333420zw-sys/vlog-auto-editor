@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from pathlib import PurePosixPath
 from typing import Any
 
 from .common import parse_time
@@ -17,6 +18,11 @@ def build_autoedit(review: dict[str, Any], analysis: dict[str, Any] | None = Non
         if not isinstance(clip, dict) or not isinstance(clip.get("source"), dict):
             raise ValueError(f"review clip {index + 1} is malformed")
         source = clip["source"].get("relative_path")
+        if not isinstance(source, str) or not source or Path(source).is_absolute() or Path(source).drive:
+            raise ValueError(f"clip {index + 1} source must be a relative raw-media path")
+        normalized_source = source.replace("\\", "/")
+        if any(part in {"", ".", ".."} for part in PurePosixPath(normalized_source).parts) and ".." in PurePosixPath(normalized_source).parts:
+            raise ValueError(f"clip {index + 1} source path must stay inside workspace/raw")
         editorial = clip.get("editorial") or {}
         ranges = editorial.get("selected_ranges") or []
         rejected = editorial.get("keep") is False

@@ -2,7 +2,7 @@ import pytest
 import json
 import shutil
 import subprocess
-from vlog_editor.render import audio_filter, build_filter, validate_plan
+from vlog_editor.render import _portrait_video_filter, audio_filter, build_filter, validate_plan
 from vlog_editor import render as render_module
 
 
@@ -26,6 +26,12 @@ def test_build_filter_can_label_output_by_timeline_segment():
     assert "[2:v]" in result
     assert "[v1]" in result
     assert "[2:a]anull[a1]" in result
+
+
+def test_portrait_filter_uses_numeric_fps_without_placeholder():
+    result = _portrait_video_filter(0, 0, 1920, 1080, 30)
+    assert "fps=30" in result
+    assert "{fps}" not in result
 
 
 def test_audio_filter_supports_documented_and_legacy_audio_contracts():
@@ -80,6 +86,24 @@ def test_real_ffmpeg_portrait_bgm_render(tmp_path):
     video = next(stream for stream in streams if stream["codec_type"] == "video")
     assert (video["width"], video["height"]) == (1920, 1080)
     assert any(stream["codec_type"] == "audio" for stream in streams)
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None, reason="FFmpeg is unavailable")
+def test_real_ffmpeg_rotation_metadata_is_explicitly_applied(tmp_path):
+    workspace = tmp_path / "workspace"; raw = workspace / "raw"; raw.mkdir(parents=True)
+    base = raw / "base.mp4"; source = raw / "rotated.mp4"
+    ffmpeg = shutil.which("ffmpeg"); ffprobe = shutil.which("ffprobe")
+    subprocess.run([ffmpeg, "-y", "-f", "lavfi", "-i", "color=c=green:s=200x100:d=1:r=10", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(base)], check=True, capture_output=True)
+    subprocess.run([ffmpeg, "-y", "-display_rotation", "90", "-i", str(base), "-c", "copy", str(source)], check=True, capture_output=True)
+    project = workspace / "project.json"
+    project.write_text(json.dumps({"output": "workspace/output/rotated.mp4", "clips": [{"source": "raw/rotated.mp4", "in": 0, "out": 1}]}), encoding="utf-8")
+    command = render_module.render(project, workspace)
+    graph = command[command.index("-filter_complex") + 1]
+    assert "transpose=1" in graph
+    output = workspace / "output" / "rotated.mp4"
+    probe = subprocess.run([ffprobe, "-v", "error", "-show_streams", "-of", "json", str(output)], check=True, capture_output=True, text=True)
+    video = next(stream for stream in json.loads(probe.stdout)["streams"] if stream["codec_type"] == "video")
+    assert (video["width"], video["height"]) == (1920, 1080)
 
 
 @pytest.mark.parametrize("streams, expected_audio_input", [([], "anullsrc=channel_layout=stereo:sample_rate=48000"), ([{"codec_type": "audio"}], None)])

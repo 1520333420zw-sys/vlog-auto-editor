@@ -13,6 +13,31 @@ def build_autoedit(review: dict[str, Any], analysis: dict[str, Any] | None = Non
     if not isinstance(review.get("clips"), list):
         raise ValueError("review manifest must contain a clips array")
     analysis_by_source = {item.get("source", {}).get("relative_path"): item for item in (analysis or {}).get("clips", [])}
+    default_representatives: dict[str, str] = {}
+    for source, item in analysis_by_source.items():
+        group = item.get("visual", {}).get("duplicate_group")
+        if group:
+            default_representatives.setdefault(group, item.get("visual", {}).get("representative_source") or source)
+    for source, item in analysis_by_source.items():
+        group = item.get("visual", {}).get("duplicate_group")
+        if group and not item.get("visual", {}).get("representative_source"):
+            item.setdefault("visual", {})["representative_source"] = default_representatives[group]
+    human_representatives: dict[str, str] = {}
+    for priority in ("keep", "selected_ranges"):
+        for clip in review["clips"]:
+            if not isinstance(clip, dict):
+                continue
+            editorial = clip.get("editorial") or {}
+            if (priority == "keep" and editorial.get("keep") is True) or (priority == "selected_ranges" and editorial.get("selected_ranges")):
+                source = clip.get("source", {}).get("relative_path")
+                group = analysis_by_source.get(source, {}).get("visual", {}).get("duplicate_group")
+                if group:
+                    human_representatives[group] = source
+    for source, item in analysis_by_source.items():
+        group = item.get("visual", {}).get("duplicate_group")
+        if group in human_representatives:
+            item.setdefault("visual", {})["representative_source"] = human_representatives[group]
+            item["visual"]["representative_reason"] = "human selected range/keep override"
     decisions = []
     total = 0.0
     used_groups: set[str] = set()
@@ -49,6 +74,9 @@ def build_autoedit(review: dict[str, Any], analysis: dict[str, Any] | None = Non
             end = min(float(duration), 4.0)
             chosen = [(0.0, end, "human keep with conservative fallback")]
         elif not rejected and float(duration) >= 1.5:
+            representative_source = visual.get("representative_source")
+            if duplicate_group and source != representative_source:
+                continue
             if duplicate_group and duplicate_group in used_groups:
                 continue
             if orientation == "portrait" and last_orientation == "portrait":
@@ -74,7 +102,13 @@ def build_autoedit(review: dict[str, Any], analysis: dict[str, Any] | None = Non
             last_orientation = orientation or last_orientation
     if not decisions:
         raise ValueError("No clips were selected for automatic rough cut")
-    return {"schema_version": 1, "target_duration_seconds": target_duration, "decisions": decisions, "total_duration_seconds": round(total, 3)}
+    representatives = {
+        group: item.get("visual", {}).get("representative_source")
+        for item in analysis_by_source.values()
+        for group in [item.get("visual", {}).get("duplicate_group")]
+        if group
+    }
+    return {"schema_version": 1, "target_duration_seconds": target_duration, "duplicate_representatives": representatives, "decisions": decisions, "total_duration_seconds": round(total, 3)}
 
 
 def write_autoedit(review_path: Path, output_path: Path, analysis_path: Path | None = None, target_duration: float | None = None, dry_run: bool = False, analysis_data: dict[str, Any] | None = None) -> dict[str, Any]:

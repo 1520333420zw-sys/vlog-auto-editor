@@ -53,6 +53,26 @@ def test_duplicate_groups_are_deterministic_and_suppress_later_automatic_clip():
     assert len(build_autoedit(data, analysis)["decisions"]) == 1
 
 
+def test_later_stronger_duplicate_becomes_representative():
+    results = [
+        {"source": {"relative_path": "weak.mp4"}, "duration_seconds": 2, "has_audio": False, "orientation": "portrait", "visual": {"representative_hash": "f" * 16}},
+        {"source": {"relative_path": "strong.mp4"}, "duration_seconds": 8, "has_audio": True, "orientation": "landscape", "visual": {"representative_hash": "f" * 16}},
+    ]
+    _duplicate_groups(results)
+    assert results[0]["visual"]["representative_source"] == "strong.mp4"
+    review_data = {"clips": [{"source": {"relative_path": "weak.mp4"}, "duration_seconds": 2, "editorial": {}}, {"source": {"relative_path": "strong.mp4"}, "duration_seconds": 8, "editorial": {}}]}
+    analysis = {"clips": results}
+    decisions = build_autoedit(review_data, analysis)["decisions"]
+    assert [decision["source"] for decision in decisions] == ["strong.mp4"]
+
+
+def test_human_keep_overrides_duplicate_representative():
+    review_data = {"clips": [{"source": {"relative_path": "weak.mp4"}, "duration_seconds": 2, "editorial": {"keep": True}}, {"source": {"relative_path": "strong.mp4"}, "duration_seconds": 8, "editorial": {}}]}
+    analysis = {"clips": [{"source": {"relative_path": "weak.mp4"}, "duration_seconds": 2, "visual": {"duplicate_group": "duplicate_001", "representative_source": "strong.mp4"}}, {"source": {"relative_path": "strong.mp4"}, "duration_seconds": 8, "visual": {"duplicate_group": "duplicate_001", "representative_source": "strong.mp4"}}]}
+    decisions = build_autoedit(review_data, analysis)["decisions"]
+    assert [decision["source"] for decision in decisions] == ["weak.mp4"]
+
+
 def test_automatic_fallback_uses_interior_window():
     decision = build_autoedit(review(keep=True), None)["decisions"][0]
     assert decision["suggested_in"] == 0

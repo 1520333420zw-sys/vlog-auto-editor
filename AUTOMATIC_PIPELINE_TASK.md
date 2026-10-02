@@ -6,4 +6,6 @@ Human `selected_ranges` and explicit `keep: false` decisions remain authoritativ
 
 The quality pass adds deterministic representative-frame average hashes and duplicate groups, interior fallback windows, orientation-aware portrait composition, optional local BGM mixing, optional local `.cube` LUT application, and explicit subtitle export or burn-in. BGM, LUT, and subtitle paths are validated before use and are never written into raw media.
 
+Rotation is handled explicitly rather than delegated to FFmpeg autorotation: `-noautorotate` is used for each input, followed by deterministic transpose/flip filters selected from 90/180/270-degree metadata. Duplicate representatives rank human editorial state first, then audio presence, usable duration, landscape suitability, and stable manifest order.
+
 Generated artifacts remain under `workspace/` and raw media is never changed. The pipeline is intentionally conservative: hard cuts, short fallback ranges, source audio, no music, no semantic or AI claims, and no HDR-to-SDR conversion.

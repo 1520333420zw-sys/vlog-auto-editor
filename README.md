@@ -137,4 +137,6 @@ python -m vlog_editor build --transcript "D:\Notes\transcript.json" --generate-s
 
 BGM is local-file-only, mixed underneath source audio with a conservative gain and short fades. `--lut` accepts an existing local `.cube` file and applies `lut3d` only to the render. Portrait footage is fitted without stretching over a blurred copy of itself; landscape footage is proportionally fitted to the 1920x1080 canvas. `--generate-subtitles` exports separate SRT/ASS files. `--burn-subtitles` additionally burns the generated SRT into the final render when a transcript is supplied. All these options are disabled by default and are represented in the generated plan for auditability.
 
+Rotation handling is explicit: the renderer passes `-noautorotate` to FFmpeg and applies deterministic `transpose=1` for 90 degrees, `transpose=2` for 270 degrees, and `hflip,vflip` for 180 degrees before composition. This avoids depending on player-specific autorotation behavior for iPhone MOV metadata.
+
 The automatic milestone does not add music, semantic claims, aggressive silence cutting, transitions, color grading, or HDR-to-SDR conversion. Mixed dimensions and orientations continue through the renderer's 1920x1080 letterbox/pillarbox normalization and 30fps output. HDR/HEVC behavior remains dependent on the installed FFmpeg build and should be visually checked.

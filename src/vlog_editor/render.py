@@ -37,22 +37,30 @@ def _escape_filter_path(path: str | Path) -> str:
     return str(path).replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
 
 
-def _portrait_video_filter(index: int, label: int, width: int, height: int, lut: str | None = None) -> str:
+def _rotation_filter(rotation: int) -> str:
+    return {90: "transpose=1", 180: "hflip,vflip", 270: "transpose=2"}.get(rotation % 360, "")
+
+
+def _portrait_video_filter(index: int, label: int, width: int, height: int, fps: int, rotation: int = 0, lut: str | None = None) -> str:
     lut_filter = f",lut3d=file='{_escape_filter_path(lut)}'" if lut else ""
-    return f"[{index}:v]split=2[bg{label}][fg{label}];[bg{label}]scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},gblur=sigma=18[bgfit{label}];[fg{label}]scale={width}:{height}:force_original_aspect_ratio=decrease[fgfit{label}];[bgfit{label}][fgfit{label}]overlay=(W-w)/2:(H-h)/2{lut_filter},fps={{fps}},format=yuv420p[v{label}]"
+    rotation_filter = _rotation_filter(rotation)
+    prefix = f"[{index}:v]{rotation_filter}," if rotation_filter else f"[{index}:v]"
+    return f"{prefix}split=2[bg{label}][fg{label}];[bg{label}]scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},gblur=sigma=18[bgfit{label}];[fg{label}]scale={width}:{height}:force_original_aspect_ratio=decrease[fgfit{label}];[bgfit{label}][fgfit{label}]overlay=(W-w)/2:(H-h)/2{lut_filter},fps={fps},format=yuv420p[v{label}]"
 
 
-def _landscape_video_filter(index: int, label: int, width: int, height: int, fps: int, lut: str | None = None) -> str:
+def _landscape_video_filter(index: int, label: int, width: int, height: int, fps: int, rotation: int = 0, lut: str | None = None) -> str:
     lut_filter = f",lut3d=file='{_escape_filter_path(lut)}'" if lut else ""
-    return f"[{index}:v]scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2{lut_filter},fps={fps},format=yuv420p[v{label}]"
+    rotation_filter = _rotation_filter(rotation)
+    prefix = f"[{index}:v]{rotation_filter}," if rotation_filter else f"[{index}:v]"
+    return f"{prefix}scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2{lut_filter},fps={fps},format=yuv420p[v{label}]"
 
 
-def build_filter(index: int, clip: dict, width: int, height: int, fps: int, output_index: int | None = None, normalize_audio: bool = False, portrait: bool = False, lut: str | None = None) -> str:
+def build_filter(index: int, clip: dict, width: int, height: int, fps: int, output_index: int | None = None, normalize_audio: bool = False, portrait: bool = False, lut: str | None = None, rotation: int = 0) -> str:
     label_index = index if output_index is None else output_index
     audio = audio_filter(clip)
     if normalize_audio:
         audio = f"{audio},{normalization_filter()}"
-    video = _portrait_video_filter(index, label_index, width, height, lut).replace("fps={fps}", f"fps={fps}") if portrait else _landscape_video_filter(index, label_index, width, height, fps, lut)
+    video = _portrait_video_filter(index, label_index, width, height, fps, rotation, lut) if portrait else _landscape_video_filter(index, label_index, width, height, fps, rotation, lut)
     return f"{video};[{index}:a]{audio}[a{label_index}]"
 
 
@@ -69,6 +77,16 @@ def _is_portrait(stream: dict) -> bool:
     if rotation in {90, 270}:
         width, height = height, width
     return bool(width and height and height > width)
+
+
+def _rotation_degrees(stream: dict) -> int:
+    tags = stream.get("tags", {})
+    side_data = stream.get("side_data_list", [])
+    raw_rotation = tags.get("rotate") or (side_data[0].get("rotation") if side_data else 0)
+    try:
+        return int(raw_rotation or 0) % 360
+    except (TypeError, ValueError):
+        return 0
 
 
 def build_bgm_filter(input_index: int, duration: float, gain_db: float) -> str:
@@ -120,7 +138,7 @@ def render(project: Path, workspace: Path, dry_run: bool = False) -> list[str]:
     for i, clip in enumerate(plan["clips"]):
         video_index = input_index
         source = resolve_workspace_path(clip["source"], workspace)
-        command += ["-ss", str(parse_time(clip["in"])), "-to", str(parse_time(clip["out"])), "-i", str(source)]
+        command += ["-noautorotate", "-ss", str(parse_time(clip["in"])), "-to", str(parse_time(clip["out"])), "-i", str(source)]
         streams = run_json_command([require_tool("ffprobe"), "-v", "error", "-show_streams", "-of", "json", str(source)]).get("streams", [])
         video_stream = next((stream for stream in streams if stream.get("codec_type") == "video"), {})
         has_audio = any(stream.get("codec_type") == "audio" for stream in streams)
@@ -129,7 +147,8 @@ def render(project: Path, workspace: Path, dry_run: bool = False) -> list[str]:
             command += ["-f", "lavfi", "-t", str(parse_time(clip["out"]) - parse_time(clip["in"])), "-i", "anullsrc=channel_layout=stereo:sample_rate=48000"]
             audio_index = input_index + 1
             input_index += 1
-        filters.append(build_filter(video_index, clip, width, height, fps, i, normalize_audio, _is_portrait(video_stream), lut).replace(f"[{video_index}:a]", f"[{audio_index}:a]"))
+        rotation = _rotation_degrees(video_stream)
+        filters.append(build_filter(video_index, clip, width, height, fps, i, normalize_audio, _is_portrait(video_stream), lut, rotation).replace(f"[{video_index}:a]", f"[{audio_index}:a]"))
         input_index += 1
     concat_inputs = "".join(f"[v{i}][a{i}]" for i in range(len(filters)))
     clip_count = len(filters)

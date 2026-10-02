@@ -37,15 +37,28 @@ def _duplicate_groups(results: list[dict[str, Any]]) -> None:
         fingerprint = item["visual"]["representative_hash"]
         match = next((group for group in groups if fingerprint and group["hash"] and _hamming_similarity(fingerprint, group["hash"]) >= 0.92), None)
         if match:
-            item["visual"]["duplicate_group"] = match["id"]
-            item["visual"]["similarity_to_representative"] = round(_hamming_similarity(fingerprint, match["hash"]), 4)
+            match["members"].append(item)
         else:
-            group = {"id": f"duplicate_{len(groups) + 1:03d}", "hash": fingerprint, "representative": item["source"]["relative_path"]}
+            group = {"id": f"duplicate_{len(groups) + 1:03d}", "hash": fingerprint, "members": [item]}
             groups.append(group)
+    for group in groups:
+        representative = max(
+            enumerate(group["members"]),
+            key=lambda pair: (
+                bool(pair[1].get("has_audio")),
+                float(pair[1].get("duration_seconds", 0)),
+                pair[1].get("orientation") == "landscape",
+                -pair[0],
+            ),
+        )[1]
+        representative_hash = representative["visual"]["representative_hash"]
+        representative_source = representative["source"]["relative_path"]
+        for item in group["members"]:
+            fingerprint = item["visual"]["representative_hash"]
             item["visual"]["duplicate_group"] = group["id"]
-            item["visual"]["similarity_to_representative"] = 1.0
-    for item in results:
-        item["visual"]["representative_source"] = next(group["representative"] for group in groups if group["id"] == item["visual"]["duplicate_group"])
+            item["visual"]["representative_source"] = representative_source
+            item["visual"]["representative_reason"] = "audio presence, usable duration, landscape suitability, then stable manifest order"
+            item["visual"]["similarity_to_representative"] = round(_hamming_similarity(fingerprint, representative_hash), 4) if fingerprint and representative_hash else 0.0
 
 
 def analyze_manifest(manifest_path: Path, workspace: Path, output_path: Path, dry_run: bool = False) -> dict[str, Any]:

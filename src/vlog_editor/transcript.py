@@ -17,16 +17,19 @@ def validate_transcript(data: Any) -> dict[str, Any]:
     return data
 
 
-def transcribe(output_path: Path, backend: str | None = None, dry_run: bool = False) -> dict[str, Any]:
-    if backend:
-        raise RuntimeError(f"Transcription backend {backend!r} is not installed; install and configure it explicitly")
-    raise RuntimeError("No local transcription backend is configured. Transcription is optional; continue without it or supply a supported backend.")
+def import_transcript(input_path: Path, output_path: Path, dry_run: bool = False) -> dict[str, Any]:
+    data = validate_transcript(json.loads(input_path.read_text(encoding="utf-8")))
+    if not dry_run:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return data
 
 
-def subtitle_source(transcript_path: Path) -> Path:
+def subtitle_source(transcript_path: Path, output: Path, dry_run: bool = False) -> Path:
     data = validate_transcript(json.loads(transcript_path.read_text(encoding="utf-8")))
-    output = transcript_path.with_name("transcript_subtitles.json")
     entries = [{"start": item["start"], "end": item["end"], "zh": item["text"], "en": item.get("translation", "")} for item in data["entries"]]
-    output.write_text(json.dumps(entries, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    if not dry_run:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(entries, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return output
 

@@ -6,7 +6,7 @@ import sys
 
 from vlog_editor.autoedit import build_autoedit, plan_from_autoedit
 from vlog_editor.finish import validate_finish_config
-from vlog_editor.transcript import validate_transcript
+from vlog_editor.transcript import import_transcript, validate_transcript
 
 
 def review(*, keep=None, ranges=None):
@@ -48,9 +48,20 @@ def test_transcript_schema_rejects_bad_timestamps():
 
 
 def test_finish_config_is_strict():
-    assert validate_finish_config({"audio_normalization": True})["audio_normalization"] is True
+    assert validate_finish_config({"audio_normalization": True, "generate_subtitles": True})["generate_subtitles"] is True
+    with pytest.raises(ValueError):
+        validate_finish_config({"burn_subtitles": True})
     with pytest.raises(ValueError):
         validate_finish_config({"magic": True})
+
+
+def test_existing_transcript_can_be_imported_and_validated(tmp_path):
+    source = tmp_path / "local.json"
+    destination = tmp_path / "workspace" / "transcript" / "transcript.json"
+    source.write_text(json.dumps({"entries": [{"start": 0, "end": 1, "text": "hello"}]}), encoding="utf-8")
+    imported = import_transcript(source, destination)
+    assert imported["entries"][0]["text"] == "hello"
+    assert destination.exists()
 
 
 @pytest.mark.parametrize("duration", [True, 0, -1, "bad"])

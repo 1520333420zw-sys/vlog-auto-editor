@@ -27,9 +27,9 @@ def main() -> int:
     review_parser = sub.add_parser("review"); review_parser.add_argument("--force", action="store_true"); review_parser.add_argument("--dry-run", action="store_true"); review_parser.add_argument("--thumbnail-count", type=int, default=6); review_parser.add_argument("--sheet-columns", type=int, default=3)
     subtitle_parser = sub.add_parser("subtitles"); subtitle_parser.add_argument("--input", type=Path, required=True); subtitle_parser.add_argument("--output-dir", type=Path)
     analyze_parser = sub.add_parser("analyze"); analyze_parser.add_argument("--input", type=Path); analyze_parser.add_argument("--output", type=Path); analyze_parser.add_argument("--dry-run", action="store_true")
-    transcribe_parser = sub.add_parser("transcribe"); transcribe_parser.add_argument("--output", type=Path); transcribe_parser.add_argument("--backend"); transcribe_parser.add_argument("--dry-run", action="store_true")
+    transcript_parser = sub.add_parser("transcript"); transcript_parser.add_argument("--input", type=Path, required=True); transcript_parser.add_argument("--output", type=Path)
     autoedit_parser = sub.add_parser("autoedit"); autoedit_parser.add_argument("--review", type=Path); autoedit_parser.add_argument("--analysis", type=Path); autoedit_parser.add_argument("--output", type=Path); autoedit_parser.add_argument("--target-duration", type=float); autoedit_parser.add_argument("--dry-run", action="store_true")
-    build_parser = sub.add_parser("build"); build_parser.add_argument("--force", action="store_true"); build_parser.add_argument("--dry-run", action="store_true"); build_parser.add_argument("--target-duration", type=float); build_parser.add_argument("--transcribe", action="store_true"); build_parser.add_argument("--subtitles", action="store_true"); build_parser.add_argument("--config", type=Path)
+    build_parser = sub.add_parser("build"); build_parser.add_argument("--force", action="store_true"); build_parser.add_argument("--dry-run", action="store_true"); build_parser.add_argument("--target-duration", type=float); build_parser.add_argument("--transcript", type=Path); build_parser.add_argument("--generate-subtitles", action="store_true"); build_parser.add_argument("--config", type=Path)
     args = parser.parse_args(); workspace = args.workspace
     if args.command == "doctor":
         from .common import require_tool
@@ -52,17 +52,17 @@ def main() -> int:
     elif args.command == "analyze":
         artifact = analyze_manifest(args.input or workspace / "manifests" / "media_manifest.json", workspace, args.output or workspace / "analysis" / "media_analysis.json", args.dry_run)
         if args.dry_run: print(json.dumps(artifact, ensure_ascii=False, indent=2))
-    elif args.command == "transcribe":
-        from .transcript import transcribe
-        transcribe(args.output or workspace / "transcript" / "transcript.json", args.backend, args.dry_run)
+    elif args.command == "transcript":
+        from .transcript import import_transcript
+        import_transcript(args.input, args.output or workspace / "transcript" / "transcript.json")
     elif args.command == "autoedit":
         artifact = write_autoedit(args.review or workspace / "review" / "review_manifest.json", args.output or workspace / "project" / "autoedit.json", args.analysis or workspace / "analysis" / "media_analysis.json", args.target_duration, args.dry_run)
         if args.dry_run: print(json.dumps(artifact, ensure_ascii=False, indent=2))
     elif args.command == "build":
         config_path = args.config or workspace / "project" / "vlog_config.json"
         config = validate_finish_config(json.loads(config_path.read_text(encoding="utf-8"))) if config_path.exists() else {}
-        transcribe_enabled = args.transcribe or config.get("auto_transcribe", False)
-        subtitles_enabled = args.subtitles or config.get("burn_subtitles", False)
+        transcript_input = args.transcript or (Path(config["transcript_path"]) if config.get("transcript_path") else None)
+        subtitles_enabled = args.generate_subtitles or config.get("generate_subtitles", False)
         manifest_path = workspace / "manifests" / "media_manifest.json"
         review_path = workspace / "review" / "review_manifest.json"
         if args.dry_run:
@@ -88,20 +88,21 @@ def main() -> int:
             print("[5/5] render")
             render(plan_path, workspace, False)
         transcript_path = workspace / "transcript" / "transcript.json"
-        if transcribe_enabled:
-            print("[optional] transcribe")
-            from .transcript import transcribe
-            transcribe(transcript_path, config.get("transcription_backend"), args.dry_run)
+        if transcript_input:
+            print("[optional] import transcript")
+            from .transcript import import_transcript
+            import_transcript(transcript_input, transcript_path, args.dry_run)
         else:
-            print("[optional] transcribe skipped (not configured)")
+            print("[optional] transcript skipped (no local transcript supplied)")
         if subtitles_enabled:
-            if not transcript_path.exists():
+            subtitle_transcript = transcript_input if args.dry_run and transcript_input else transcript_path
+            if not subtitle_transcript.exists():
                 raise FileNotFoundError("Subtitle generation was requested, but no transcript.json exists")
             if args.dry_run:
                 print("[optional] subtitles would be generated from transcript.json")
             else:
                 from .transcript import subtitle_source
-                subtitle_input = subtitle_source(transcript_path)
+                subtitle_input = subtitle_source(subtitle_transcript, workspace / "transcript" / "transcript_subtitles.json")
                 write_subtitles(subtitle_input, workspace / "subtitles")
         else:
             print("[optional] subtitles skipped (not configured)")

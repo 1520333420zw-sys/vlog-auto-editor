@@ -121,9 +121,9 @@ Additional commands are available independently:
 ```powershell
 python -m vlog_editor analyze
 python -m vlog_editor autoedit --target-duration 300
-python -m vlog_editor transcribe
+python -m vlog_editor transcript --input workspace\project\transcript.json
 ```
 
-`analyze` writes `workspace/analysis/media_analysis.json` with deterministic probe metadata and explicitly marked unsupported signals. `autoedit` writes `workspace/project/autoedit.json`, including reasons, source identifiers, scores that are heuristic (not AI probabilities), and decision provenance. Optional stages are explicit: use `python -m vlog_editor build --transcribe` or `--subtitles`, or configure `auto_transcribe`, `burn_subtitles`, `transcription_backend`, and `audio_normalization` in `workspace/project/vlog_config.json`. Transcription reports a clear actionable error when the selected local backend is unavailable; leaving it unconfigured skips it. Subtitle files are generated only from an existing transcript and never translated automatically. Audio normalization is also strict opt-in. Generated reports, subtitle exports, and renders stay local and must not be committed.
+`analyze` writes `workspace/analysis/media_analysis.json` with deterministic probe metadata and explicitly marked unsupported signals. `autoedit` writes `workspace/project/autoedit.json`, including reasons, source identifiers, scores that are heuristic (not AI probabilities), and decision provenance. Transcript use is explicit: import an existing local timed JSON with `python -m vlog_editor transcript --input ...`, or pass `--transcript` to `build`. Optional subtitle export uses `--generate-subtitles` or `generate_subtitles` in `workspace/project/vlog_config.json`; it writes separate SRT/ASS files and never burns them into the video. `audio_normalization` remains strict opt-in. Generated reports, subtitle exports, and renders stay local and must not be committed.
 
 The automatic milestone does not add music, semantic claims, aggressive silence cutting, transitions, color grading, or HDR-to-SDR conversion. Mixed dimensions and orientations continue through the renderer's 1920x1080 letterbox/pillarbox normalization and 30fps output. HDR/HEVC behavior remains dependent on the installed FFmpeg build and should be visually checked.

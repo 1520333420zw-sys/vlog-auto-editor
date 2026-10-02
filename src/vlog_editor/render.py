@@ -18,9 +18,22 @@ def validate_plan(plan: dict) -> None:
         if parse_time(clip["out"]) <= parse_time(clip["in"]): raise ValueError(f"clip {index} out must be after in")
 
 
-def build_filter(index: int, clip: dict, width: int, height: int, fps: int) -> str:
+def audio_filter(clip: dict) -> str:
+    if "audio" in clip:
+        audio = clip["audio"]
+        if audio == "source":
+            return "anull"
+        if audio == "mute":
+            return "volume=0"
+        if isinstance(audio, (int, float)) and not isinstance(audio, bool):
+            return f"volume={float(audio):g}dB"
+        raise ValueError("audio must be 'source', 'mute', or a numeric gain in dB")
     gain = clip.get("audio_gain_db", 0)
-    audio = f"volume={gain}dB" if gain else "anull"
+    return f"volume={gain}dB" if gain else "anull"
+
+
+def build_filter(index: int, clip: dict, width: int, height: int, fps: int) -> str:
+    audio = audio_filter(clip)
     return f"[{index}:v]scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,fps={fps},format=yuv420p[v{index}];[{index}:a]{audio}[a{index}]"
 
 

@@ -8,7 +8,7 @@ Turn iPhone source footage into a reviewable V1 rough cut while keeping the crea
 
 Pipeline:
 
-`iPhone footage -> scan -> manifest -> edit plan -> rough cut -> bilingual subtitles -> V1 export -> Jianying/CapCut fine cut`
+`iPhone footage -> scan -> manifest -> review -> human editorial decisions -> generated rough-cut plan -> rough cut -> bilingual subtitles -> V1 export -> Jianying/CapCut fine cut`
 
 ## Creative brief
 
@@ -62,11 +62,43 @@ Copy-Item examples\subtitles.example.json workspace\project\subtitles.json
 python -m vlog_editor scan
 python -m vlog_editor proxy
 python -m vlog_editor review
-python -m vlog_editor render --project workspace\project\rough_cut.json
+python -m vlog_editor plan --dry-run
+python -m vlog_editor plan
+python -m vlog_editor render --project workspace\project\rough_cut.generated.json
 python -m vlog_editor subtitles --input workspace\project\subtitles.json
 ```
 
 Edit the sample JSON files to reference your own local clips and human-authored bilingual text. The renderer makes hard cuts on a 1920x1080/30fps canvas and preserves source audio where available. Subtitle generation never translates or invents text. A generated `.srt` and `.ass` can be reviewed in Jianying/CapCut; a burned-in review render is intentionally left to the editor in Phase 1.
+
+## Review-to-plan workflow
+
+After `scan` and `review`, inspect `workspace/review/review_manifest.json` and make human editorial decisions in each clip's `editorial` fields:
+
+- Set `keep` to `true` to include a clip.
+- Add `selected_ranges` to choose exact source ranges.
+- Leave rejected or unreviewed clips without selected ranges to exclude them.
+
+Generate a renderable plan:
+
+```powershell
+python -m vlog_editor plan --dry-run
+python -m vlog_editor plan
+python -m vlog_editor render --project workspace\project\rough_cut.generated.json
+```
+
+The planner reads `workspace/review/review_manifest.json` by default and writes `workspace/project/rough_cut.generated.json` by default. You can override paths:
+
+```powershell
+python -m vlog_editor plan --input workspace\review\review_manifest.json --output workspace\project\rough_cut.generated.json
+```
+
+Explicit `selected_ranges` always win over `keep`. Each range creates one segment and must satisfy `0 <= in < out <= duration_seconds`. Ranges may use `in`/`out` or `start`/`end`, with seconds or timestamp strings.
+
+If `keep` is `true` and no ranges are supplied, the planner uses a conservative fallback range from `0` to `min(duration_seconds, 4.0)` seconds. This creates a short placeholder instead of silently selecting a long full clip.
+
+Generated segments use `audio: "source"` to preserve source sound. Older hand-written plans that use `audio_gain_db` remain supported by the renderer.
+
+The planner only uses source paths represented in the review manifest and rejects absolute paths or traversal outside `workspace/raw/`. It does not modify, move, rename, or delete source media.
 
 Run tests with `python -m pytest`.
 

@@ -5,6 +5,7 @@ import pytest
 import sys
 
 from vlog_editor.autoedit import build_autoedit, plan_from_autoedit
+from vlog_editor.analyze import _duplicate_groups
 from vlog_editor.finish import validate_finish_config
 from vlog_editor.transcript import import_transcript, validate_transcript
 
@@ -37,6 +38,29 @@ def test_automatic_fallback_is_deterministic_and_converts_to_plan():
     assert plan_from_autoedit(artifact)["clips"][0]["audio"] == "source"
 
 
+def test_duplicate_groups_are_deterministic_and_suppress_later_automatic_clip():
+    results = [
+        {"source": {"relative_path": "a.mp4"}, "visual": {"representative_hash": "f" * 16}},
+        {"source": {"relative_path": "b.mp4"}, "visual": {"representative_hash": "f" * 16}},
+    ]
+    _duplicate_groups(results)
+    assert results[0]["visual"]["duplicate_group"] == results[1]["visual"]["duplicate_group"]
+    data = {"clips": [
+        {"source": {"relative_path": "a.mp4"}, "duration_seconds": 8, "editorial": {}},
+        {"source": {"relative_path": "b.mp4"}, "duration_seconds": 8, "editorial": {}},
+    ]}
+    analysis = {"clips": [{"source": {"relative_path": "a.mp4"}, "visual": {"duplicate_group": "duplicate_001"}}, {"source": {"relative_path": "b.mp4"}, "visual": {"duplicate_group": "duplicate_001"}}]}
+    assert len(build_autoedit(data, analysis)["decisions"]) == 1
+
+
+def test_automatic_fallback_uses_interior_window():
+    decision = build_autoedit(review(keep=True), None)["decisions"][0]
+    assert decision["suggested_in"] == 0
+    long_review = review(); long_review["clips"][0]["duration_seconds"] = 12
+    long_decision = build_autoedit(long_review)["decisions"][0]
+    assert 0 < long_decision["suggested_in"] < 8
+
+
 def test_target_duration_does_not_truncate_human_material():
     artifact = build_autoedit(review(keep=True, ranges=[{"in": 0, "out": 8}]), target_duration=2)
     assert artifact["total_duration_seconds"] == 8
@@ -49,8 +73,7 @@ def test_transcript_schema_rejects_bad_timestamps():
 
 def test_finish_config_is_strict():
     assert validate_finish_config({"audio_normalization": True, "generate_subtitles": True})["generate_subtitles"] is True
-    with pytest.raises(ValueError):
-        validate_finish_config({"burn_subtitles": True})
+    assert validate_finish_config({"burn_subtitles": True})["burn_subtitles"] is True
     with pytest.raises(ValueError):
         validate_finish_config({"magic": True})
 

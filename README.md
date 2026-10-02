@@ -124,6 +124,17 @@ python -m vlog_editor autoedit --target-duration 300
 python -m vlog_editor transcript --input workspace\project\transcript.json
 ```
 
-`analyze` writes `workspace/analysis/media_analysis.json` with deterministic probe metadata and explicitly marked unsupported signals. `autoedit` writes `workspace/project/autoedit.json`, including reasons, source identifiers, scores that are heuristic (not AI probabilities), and decision provenance. Transcript use is explicit: import an existing local timed JSON with `python -m vlog_editor transcript --input ...`, or pass `--transcript` to `build`. Optional subtitle export uses `--generate-subtitles` or `generate_subtitles` in `workspace/project/vlog_config.json`; it writes separate SRT/ASS files and never burns them into the video. `audio_normalization` remains strict opt-in. Generated reports, subtitle exports, and renders stay local and must not be committed.
+`analyze` writes `workspace/analysis/media_analysis.json` with deterministic probe metadata, representative-frame hashes, duplicate groups, orientation, and explicitly marked unsupported signals. `autoedit` writes `workspace/project/autoedit.json`, including reasons, source identifiers, duplicate membership, orientation, heuristic scores (not AI probabilities), selected windows, and decision provenance. Automatic fallback windows use an interior segment for longer clips and suppress later near-duplicates; explicit human ranges and keep decisions remain authoritative.
+
+Optional local finishing controls are available from PowerShell:
+
+```powershell
+python -m vlog_editor build --bgm "D:\Music\vlog.mp3"
+python -m vlog_editor build --bgm "D:\Music\vlog.mp3" --bgm-gain -20 --lut "D:\Looks\cool-clean.cube"
+python -m vlog_editor build --transcript "D:\Notes\transcript.json" --generate-subtitles
+python -m vlog_editor build --transcript "D:\Notes\transcript.json" --generate-subtitles --burn-subtitles
+```
+
+BGM is local-file-only, mixed underneath source audio with a conservative gain and short fades. `--lut` accepts an existing local `.cube` file and applies `lut3d` only to the render. Portrait footage is fitted without stretching over a blurred copy of itself; landscape footage is proportionally fitted to the 1920x1080 canvas. `--generate-subtitles` exports separate SRT/ASS files. `--burn-subtitles` additionally burns the generated SRT into the final render when a transcript is supplied. All these options are disabled by default and are represented in the generated plan for auditability.
 
 The automatic milestone does not add music, semantic claims, aggressive silence cutting, transitions, color grading, or HDR-to-SDR conversion. Mixed dimensions and orientations continue through the renderer's 1920x1080 letterbox/pillarbox normalization and 30fps output. HDR/HEVC behavior remains dependent on the installed FFmpeg build and should be visually checked.

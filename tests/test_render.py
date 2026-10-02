@@ -1,5 +1,7 @@
 import pytest
 import json
+import shutil
+import subprocess
 from vlog_editor.render import audio_filter, build_filter, validate_plan
 from vlog_editor import render as render_module
 
@@ -42,6 +44,42 @@ def test_render_audio_normalization_is_strict_opt_in(monkeypatch, tmp_path):
     monkeypatch.setattr(render_module.subprocess, "run", lambda *args, **kwargs: type("Result", (), {"returncode": 0, "stderr": ""})())
     command = render_module.render(project, workspace, dry_run=False)
     assert "loudnorm=I=-16:TP=-1.5:LRA=11:linear=true" in command[command.index("-filter_complex") + 1]
+
+
+def test_render_portrait_bgm_lut_and_burned_subtitle_options(monkeypatch, tmp_path):
+    workspace = tmp_path / "workspace"; source = workspace / "raw" / "portrait.MOV"; source.parent.mkdir(parents=True); source.write_bytes(b"source")
+    bgm = tmp_path / "music.mp3"; bgm.write_bytes(b"music")
+    lut = tmp_path / "look.cube"; lut.write_text("LUT_3D_SIZE 2\n", encoding="utf-8")
+    subtitle = tmp_path / "captions.srt"; subtitle.write_text("1\n00:00:00,000 --> 00:00:01,000\nhello\n", encoding="utf-8")
+    project = workspace / "project.json"
+    project.write_text(json.dumps({"bgm": {"path": str(bgm), "gain_db": -18}, "lut": str(lut), "subtitle_file": str(subtitle), "clips": [{"source": "raw/portrait.MOV", "in": 0, "out": 1}]}), encoding="utf-8")
+    monkeypatch.setattr(render_module, "require_tool", lambda name: name)
+    monkeypatch.setattr(render_module, "run_json_command", lambda _: {"streams": [{"codec_type": "video", "width": 1080, "height": 1920, "tags": {"rotate": "0"}}, {"codec_type": "audio"}]})
+    monkeypatch.setattr(render_module.subprocess, "run", lambda *args, **kwargs: type("Result", (), {"returncode": 0, "stderr": ""})())
+    command = render_module.render(project, workspace, dry_run=False)
+    graph = command[command.index("-filter_complex") + 1]
+    assert "gblur=sigma=18" in graph
+    assert "lut3d" in graph
+    assert "subtitles=filename" in graph
+    assert "amix=inputs=2" in graph
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None, reason="FFmpeg is unavailable")
+def test_real_ffmpeg_portrait_bgm_render(tmp_path):
+    workspace = tmp_path / "workspace"; raw = workspace / "raw"; raw.mkdir(parents=True)
+    source = raw / "portrait.mp4"; bgm = tmp_path / "bgm.wav"
+    ffmpeg = shutil.which("ffmpeg"); ffprobe = shutil.which("ffprobe")
+    subprocess.run([ffmpeg, "-y", "-f", "lavfi", "-i", "color=c=blue:s=100x200:d=1:r=10", "-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-map", "0:v", "-map", "1:a", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", str(source)], check=True, capture_output=True)
+    subprocess.run([ffmpeg, "-y", "-f", "lavfi", "-i", "sine=frequency=220:duration=1", str(bgm)], check=True, capture_output=True)
+    project = workspace / "project.json"
+    project.write_text(json.dumps({"output": "workspace/output/portrait-bgm.mp4", "clips": [{"source": "raw/portrait.mp4", "in": 0, "out": 1}], "bgm": {"path": str(bgm), "gain_db": -20}}), encoding="utf-8")
+    render_module.render(project, workspace)
+    output = workspace / "output" / "portrait-bgm.mp4"
+    probe = subprocess.run([ffprobe, "-v", "error", "-show_streams", "-of", "json", str(output)], check=True, capture_output=True, text=True)
+    streams = json.loads(probe.stdout)["streams"]
+    video = next(stream for stream in streams if stream["codec_type"] == "video")
+    assert (video["width"], video["height"]) == (1920, 1080)
+    assert any(stream["codec_type"] == "audio" for stream in streams)
 
 
 @pytest.mark.parametrize("streams, expected_audio_input", [([], "anullsrc=channel_layout=stereo:sample_rate=48000"), ([{"codec_type": "audio"}], None)])

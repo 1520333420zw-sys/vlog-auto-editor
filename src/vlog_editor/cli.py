@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 
 from .plan import write_generated_plan
+from .analyze import analyze_manifest
+from .autoedit import plan_from_autoedit, write_autoedit
 from .proxy import generate_proxies
 from .render import render
 from .review import build_review_package
@@ -23,6 +25,10 @@ def main() -> int:
     plan_parser = sub.add_parser("plan"); plan_parser.add_argument("--input", type=Path); plan_parser.add_argument("--output", type=Path); plan_parser.add_argument("--dry-run", action="store_true")
     review_parser = sub.add_parser("review"); review_parser.add_argument("--force", action="store_true"); review_parser.add_argument("--dry-run", action="store_true"); review_parser.add_argument("--thumbnail-count", type=int, default=6); review_parser.add_argument("--sheet-columns", type=int, default=3)
     subtitle_parser = sub.add_parser("subtitles"); subtitle_parser.add_argument("--input", type=Path, required=True); subtitle_parser.add_argument("--output-dir", type=Path)
+    analyze_parser = sub.add_parser("analyze"); analyze_parser.add_argument("--input", type=Path); analyze_parser.add_argument("--output", type=Path); analyze_parser.add_argument("--dry-run", action="store_true")
+    transcribe_parser = sub.add_parser("transcribe"); transcribe_parser.add_argument("--output", type=Path); transcribe_parser.add_argument("--backend"); transcribe_parser.add_argument("--dry-run", action="store_true")
+    autoedit_parser = sub.add_parser("autoedit"); autoedit_parser.add_argument("--review", type=Path); autoedit_parser.add_argument("--analysis", type=Path); autoedit_parser.add_argument("--output", type=Path); autoedit_parser.add_argument("--target-duration", type=float); autoedit_parser.add_argument("--dry-run", action="store_true")
+    build_parser = sub.add_parser("build"); build_parser.add_argument("--force", action="store_true"); build_parser.add_argument("--dry-run", action="store_true"); build_parser.add_argument("--target-duration", type=float)
     args = parser.parse_args(); workspace = args.workspace
     if args.command == "doctor":
         from .common import require_tool
@@ -42,4 +48,30 @@ def main() -> int:
     elif args.command == "render": render(args.project, workspace, args.dry_run)
     elif args.command == "review": build_review_package(workspace, args.force, args.dry_run, args.thumbnail_count, args.sheet_columns)
     elif args.command == "subtitles": write_subtitles(args.input, args.output_dir or workspace / "subtitles")
+    elif args.command == "analyze":
+        artifact = analyze_manifest(args.input or workspace / "manifests" / "media_manifest.json", workspace, args.output or workspace / "analysis" / "media_analysis.json", args.dry_run)
+        if args.dry_run: print(json.dumps(artifact, ensure_ascii=False, indent=2))
+    elif args.command == "transcribe":
+        from .transcript import transcribe
+        transcribe(args.output or workspace / "transcript" / "transcript.json", args.backend, args.dry_run)
+    elif args.command == "autoedit":
+        artifact = write_autoedit(args.review or workspace / "review" / "review_manifest.json", args.output or workspace / "project" / "autoedit.json", args.analysis or workspace / "analysis" / "media_analysis.json", args.target_duration, args.dry_run)
+        if args.dry_run: print(json.dumps(artifact, ensure_ascii=False, indent=2))
+    elif args.command == "build":
+        print("[1/5] scan")
+        scan(workspace / "raw", workspace / "manifests")
+        print("[2/5] review package")
+        build_review_package(workspace, args.force, args.dry_run)
+        print("[3/5] analyze")
+        analyze_manifest(workspace / "manifests" / "media_manifest.json", workspace, workspace / "analysis" / "media_analysis.json", args.dry_run)
+        print("[4/5] automatic decisions")
+        artifact = write_autoedit(workspace / "review" / "review_manifest.json", workspace / "project" / "autoedit.json", workspace / "analysis" / "media_analysis.json", args.target_duration, args.dry_run)
+        plan = plan_from_autoedit(artifact)
+        if args.dry_run:
+            print(json.dumps(plan, ensure_ascii=False, indent=2))
+        else:
+            plan_path = workspace / "project" / "rough_cut.generated.json"
+            plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            print("[5/5] render")
+            render(plan_path, workspace, False)
     return 0

@@ -105,3 +105,25 @@ Run tests with `python -m pytest`.
 Known limitations: iPhone HDR/HEVC handling depends on the installed FFmpeg build and may require later color-management work; rotation metadata is collected and FFmpeg is asked to honor it, but unusual vendor metadata should be checked visually. Real media is required for an end-to-end render smoke test.
 
 The system is intentionally semi-automatic: editorial judgment remains with ChatGPT/user; automation handles repetitive media operations.
+
+## Automatic workflow
+
+The coherent local pipeline can be run with:
+
+```powershell
+python -m vlog_editor build
+```
+
+It scans raw footage, creates or refreshes the review package, writes portable media analysis, creates an auditable automatic decision report, writes a deterministic rough-cut plan, and renders the V1 file. Use `--dry-run` to inspect the decision/plan stages where no media output is required, `--force` to refresh review assets, and `--target-duration 300` for a best-effort target. Explicit review ranges and `keep: false` decisions remain authoritative; automatic fallback only fills undecided usable clips.
+
+Additional commands are available independently:
+
+```powershell
+python -m vlog_editor analyze
+python -m vlog_editor autoedit --target-duration 300
+python -m vlog_editor transcribe
+```
+
+`analyze` writes `workspace/analysis/media_analysis.json` with deterministic probe metadata and explicitly marked unsupported signals. `autoedit` writes `workspace/project/autoedit.json`, including reasons, source identifiers, scores that are heuristic (not AI probabilities), and decision provenance. `transcribe` is optional and currently reports a clear actionable error unless an explicit local backend is integrated; the rest of the pipeline does not depend on it. Generated reports, subtitle exports, and renders stay local and must not be committed.
+
+The automatic milestone does not add music, semantic claims, aggressive silence cutting, transitions, color grading, or HDR-to-SDR conversion. Mixed dimensions and orientations continue through the renderer's 1920x1080 letterbox/pillarbox normalization and 30fps output. HDR/HEVC behavior remains dependent on the installed FFmpeg build and should be visually checked.

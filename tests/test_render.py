@@ -33,6 +33,17 @@ def test_audio_filter_supports_documented_and_legacy_audio_contracts():
     assert audio_filter({"audio_gain_db": -3}) == "volume=-3dB"
 
 
+def test_render_audio_normalization_is_strict_opt_in(monkeypatch, tmp_path):
+    workspace = tmp_path / "workspace"; source = workspace / "raw" / "clip.MOV"; source.parent.mkdir(parents=True); source.write_bytes(b"source")
+    project = workspace / "project.json"
+    project.write_text(json.dumps({"audio_normalization": True, "clips": [{"source": "raw/clip.MOV", "in": 0, "out": 1}]}), encoding="utf-8")
+    monkeypatch.setattr(render_module, "require_tool", lambda name: name)
+    monkeypatch.setattr(render_module, "run_json_command", lambda _: {"streams": [{"codec_type": "audio"}]})
+    monkeypatch.setattr(render_module.subprocess, "run", lambda *args, **kwargs: type("Result", (), {"returncode": 0, "stderr": ""})())
+    command = render_module.render(project, workspace, dry_run=False)
+    assert "loudnorm=I=-16:TP=-1.5:LRA=11:linear=true" in command[command.index("-filter_complex") + 1]
+
+
 @pytest.mark.parametrize("streams, expected_audio_input", [([], "anullsrc=channel_layout=stereo:sample_rate=48000"), ([{"codec_type": "audio"}], None)])
 def test_render_command_handles_audio_and_video_only(monkeypatch, tmp_path, streams, expected_audio_input):
     workspace = tmp_path / "workspace"; source = workspace / "raw" / "clip.MOV"; source.parent.mkdir(parents=True); source.write_bytes(b"source")

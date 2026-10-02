@@ -98,7 +98,7 @@ If `keep` is `true` and no ranges are supplied, the planner uses a conservative 
 
 Generated segments use `audio: "source"` to preserve source sound. Older hand-written plans that use `audio_gain_db` remain supported by the renderer.
 
-The planner only uses source paths represented in the review manifest and rejects absolute paths or traversal outside `workspace/raw/`. It does not modify, move, rename, or delete source media.
+The review manifest is the authority for which raw-media paths are represented at planning time. The planner requires each clip record to be an object, `source` to be an object, and `source.relative_path` to be a non-empty relative path. It rejects absolute paths, drive-qualified paths, and traversal outside `workspace/raw/`. It does not modify, move, rename, or delete source media.
 
 Run tests with `python -m pytest`.
 

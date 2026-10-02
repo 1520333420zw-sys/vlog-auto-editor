@@ -21,10 +21,13 @@ Phase 3 is a planning bridge. It does not make automatic creative decisions beyo
 
 ## Input contract
 
-The planner reads the Phase 2 review manifest. Each clip is expected to include:
+The planner reads the Phase 2 review manifest. The review manifest is treated as the authority for which raw-media paths are represented at planning time; the planner validates the manifest shape and raw-tree boundary, but it does not rediscover sources independently.
+
+Each entry in `clips` must be an object. Each clip is expected to include:
 
 - `display_id` and/or `clip_id` for actionable errors and audit fields.
-- `source.relative_path`, relative to `workspace/raw/`.
+- `source`, as an object.
+- `source.relative_path`, as a non-empty relative path under `workspace/raw/`.
 - `duration_seconds`.
 - `editorial.keep`.
 - `editorial.selected_ranges`.
@@ -80,7 +83,7 @@ Generated segments use `audio: "source"` by default to preserve source sound. Th
 
 ## Safety rules
 
-Generated sources must resolve inside `workspace/raw/` and originate from `source.relative_path` in the review manifest. The planner rejects absolute paths and path traversal. It never modifies, moves, renames, or deletes source media.
+Generated sources must resolve inside `workspace/raw/` and originate from `source.relative_path` in the review manifest. The planner rejects malformed clip/source records, empty source paths, absolute paths, drive-qualified paths, and path traversal. It never modifies, moves, renames, or deletes source media.
 
 `--dry-run` validates input and constructs the exact logical plan without writing the output file.
 

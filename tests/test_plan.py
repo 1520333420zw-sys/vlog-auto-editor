@@ -83,6 +83,21 @@ def test_source_path_must_stay_inside_workspace_raw(tmp_path, relative_path):
         build_plan(manifest([clip("C001", relative_path=relative_path, keep=True)]), tmp_path / "workspace")
 
 
+@pytest.mark.parametrize(
+    "clips, message",
+    [
+        ([None], "clip 1 must be an object"),
+        ([{"display_id": "C001", "duration_seconds": 10, "editorial": {"keep": True}}], "source must be an object"),
+        ([{"display_id": "C001", "source": [], "duration_seconds": 10, "editorial": {"keep": True}}], "source must be an object"),
+        ([{"display_id": "C001", "source": {}, "duration_seconds": 10, "editorial": {"keep": True}}], "source.relative_path"),
+        ([{"display_id": "C001", "source": {"relative_path": ""}, "duration_seconds": 10, "editorial": {"keep": True}}], "source.relative_path"),
+    ],
+)
+def test_malformed_clip_and_source_records_are_rejected(tmp_path, clips, message):
+    with pytest.raises(ValueError, match=message):
+        build_plan(manifest(clips), tmp_path / "workspace")
+
+
 def test_deterministic_output(tmp_path):
     review = manifest([clip("C001", keep=True)])
     first = build_plan(review, tmp_path / "workspace")

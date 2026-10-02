@@ -77,8 +77,12 @@ def build_plan(review_manifest: dict[str, Any], workspace: Path) -> dict[str, An
         raise ValueError("review_manifest.json must contain a clips array")
     planned: list[dict[str, Any]] = []
     for clip_index, clip in enumerate(clips):
-        source = clip.get("source", {})
-        relative_path = source.get("relative_path") if isinstance(source, dict) else None
+        if not isinstance(clip, dict):
+            raise ValueError(f"review_manifest.json clip {clip_index + 1} must be an object")
+        source = clip.get("source")
+        if not isinstance(source, dict):
+            raise ValueError(f"{_clip_label(clip, clip_index)} source must be an object")
+        relative_path = source.get("relative_path")
         if not isinstance(relative_path, str) or not relative_path:
             raise ValueError(f"{_clip_label(clip, clip_index)} is missing source.relative_path")
         ranges = _selected_ranges(clip, clip_index)

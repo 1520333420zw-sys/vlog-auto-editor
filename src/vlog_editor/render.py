@@ -32,9 +32,10 @@ def audio_filter(clip: dict) -> str:
     return f"volume={gain}dB" if gain else "anull"
 
 
-def build_filter(index: int, clip: dict, width: int, height: int, fps: int) -> str:
+def build_filter(index: int, clip: dict, width: int, height: int, fps: int, output_index: int | None = None) -> str:
+    label_index = index if output_index is None else output_index
     audio = audio_filter(clip)
-    return f"[{index}:v]scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,fps={fps},format=yuv420p[v{index}];[{index}:a]{audio}[a{index}]"
+    return f"[{index}:v]scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,fps={fps},format=yuv420p[v{label_index}];[{index}:a]{audio}[a{label_index}]"
 
 
 def render(project: Path, workspace: Path, dry_run: bool = False) -> list[str]:
@@ -57,7 +58,7 @@ def render(project: Path, workspace: Path, dry_run: bool = False) -> list[str]:
             command += ["-f", "lavfi", "-t", str(parse_time(clip["out"]) - parse_time(clip["in"])), "-i", "anullsrc=channel_layout=stereo:sample_rate=48000"]
             audio_index = input_index + 1
             input_index += 1
-        filters.append(build_filter(video_index, clip, width, height, fps).replace(f"[{video_index}:a]", f"[{audio_index}:a]"))
+        filters.append(build_filter(video_index, clip, width, height, fps, i).replace(f"[{video_index}:a]", f"[{audio_index}:a]"))
         input_index += 1
     concat_inputs = "".join(f"[v{i}][a{i}]" for i in range(len(filters)))
     filters.append(f"{concat_inputs}concat=n={len(filters)}:v=1:a=1[vout][aout]")

@@ -58,9 +58,9 @@ def build_autoedit(review: dict[str, Any], analysis: dict[str, Any] | None = Non
     return {"schema_version": 1, "target_duration_seconds": target_duration, "decisions": decisions, "total_duration_seconds": round(total, 3)}
 
 
-def write_autoedit(review_path: Path, output_path: Path, analysis_path: Path | None = None, target_duration: float | None = None, dry_run: bool = False) -> dict[str, Any]:
+def write_autoedit(review_path: Path, output_path: Path, analysis_path: Path | None = None, target_duration: float | None = None, dry_run: bool = False, analysis_data: dict[str, Any] | None = None) -> dict[str, Any]:
     review = json.loads(review_path.read_text(encoding="utf-8"))
-    analysis = json.loads(analysis_path.read_text(encoding="utf-8")) if analysis_path and analysis_path.exists() else None
+    analysis = analysis_data if analysis_data is not None else (json.loads(analysis_path.read_text(encoding="utf-8")) if analysis_path and analysis_path.exists() else None)
     artifact = build_autoedit(review, analysis, target_duration)
     if not dry_run:
         output_path.parent.mkdir(parents=True, exist_ok=True)

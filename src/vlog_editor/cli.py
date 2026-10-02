@@ -75,9 +75,9 @@ def main() -> int:
             print("[2/5] review package")
             build_review_package(workspace, args.force, False)
         print("[3/5] analyze")
-        analyze_manifest(workspace / "manifests" / "media_manifest.json", workspace, workspace / "analysis" / "media_analysis.json", args.dry_run)
+        analysis = analyze_manifest(workspace / "manifests" / "media_manifest.json", workspace, workspace / "analysis" / "media_analysis.json", args.dry_run)
         print("[4/5] automatic decisions")
-        artifact = write_autoedit(review_path, workspace / "project" / "autoedit.json", workspace / "analysis" / "media_analysis.json", args.target_duration, args.dry_run)
+        artifact = write_autoedit(review_path, workspace / "project" / "autoedit.json", workspace / "analysis" / "media_analysis.json", args.target_duration, args.dry_run, analysis_data=analysis)
         plan = plan_from_autoedit(artifact)
         plan["audio_normalization"] = config.get("audio_normalization", False)
         if args.dry_run:

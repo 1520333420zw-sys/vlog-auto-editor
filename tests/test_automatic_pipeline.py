@@ -87,3 +87,26 @@ def test_build_dry_run_does_not_write_workspace(monkeypatch, tmp_path):
     assert cli.main() == 0
     after = {path.relative_to(workspace): path.read_bytes() for path in workspace.rglob("*") if path.is_file()}
     assert after == before
+
+
+def test_build_dry_run_uses_fresh_analysis_over_stale_file(monkeypatch, tmp_path, capsys):
+    from vlog_editor import cli
+
+    workspace = tmp_path / "workspace"
+    (workspace / "manifests").mkdir(parents=True)
+    (workspace / "review").mkdir(parents=True)
+    (workspace / "analysis").mkdir(parents=True)
+    (workspace / "manifests" / "media_manifest.json").write_text("[]", encoding="utf-8")
+    review_data = review()
+    (workspace / "review" / "review_manifest.json").write_text(json.dumps(review_data), encoding="utf-8")
+    stale = {"clips": [{"source": {"relative_path": "a clip.mp4"}, "signals": {"audio_activity": "present"}}]}
+    (workspace / "analysis" / "media_analysis.json").write_text(json.dumps(stale), encoding="utf-8")
+    before = {path.relative_to(workspace): path.read_bytes() for path in workspace.rglob("*") if path.is_file()}
+    fresh = {"clips": [{"source": {"relative_path": "a clip.mp4"}, "signals": {"audio_activity": "none"}}]}
+    monkeypatch.setattr(cli, "analyze_manifest", lambda *args, **kwargs: fresh)
+    monkeypatch.setattr(sys, "argv", ["vlog-editor", "--workspace", str(workspace), "build", "--dry-run"])
+    assert cli.main() == 0
+    output = capsys.readouterr().out
+    assert "video-only source" in output
+    after = {path.relative_to(workspace): path.read_bytes() for path in workspace.rglob("*") if path.is_file()}
+    assert after == before

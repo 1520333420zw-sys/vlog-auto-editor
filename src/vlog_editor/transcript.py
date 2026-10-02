@@ -22,3 +22,11 @@ def transcribe(output_path: Path, backend: str | None = None, dry_run: bool = Fa
         raise RuntimeError(f"Transcription backend {backend!r} is not installed; install and configure it explicitly")
     raise RuntimeError("No local transcription backend is configured. Transcription is optional; continue without it or supply a supported backend.")
 
+
+def subtitle_source(transcript_path: Path) -> Path:
+    data = validate_transcript(json.loads(transcript_path.read_text(encoding="utf-8")))
+    output = transcript_path.with_name("transcript_subtitles.json")
+    entries = [{"start": item["start"], "end": item["end"], "zh": item["text"], "en": item.get("translation", "")} for item in data["entries"]]
+    output.write_text(json.dumps(entries, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return output
+

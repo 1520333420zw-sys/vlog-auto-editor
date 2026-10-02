@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from pathlib import PurePosixPath
 from typing import Any
@@ -23,6 +24,9 @@ def build_autoedit(review: dict[str, Any], analysis: dict[str, Any] | None = Non
         normalized_source = source.replace("\\", "/")
         if any(part in {"", ".", ".."} for part in PurePosixPath(normalized_source).parts) and ".." in PurePosixPath(normalized_source).parts:
             raise ValueError(f"clip {index + 1} source path must stay inside workspace/raw")
+        duration = clip.get("duration_seconds")
+        if isinstance(duration, bool) or not isinstance(duration, (int, float)) or not math.isfinite(float(duration)) or duration <= 0:
+            raise ValueError(f"clip {index + 1} duration_seconds must be a positive number")
         editorial = clip.get("editorial") or {}
         ranges = editorial.get("selected_ranges") or []
         rejected = editorial.get("keep") is False
@@ -32,14 +36,14 @@ def build_autoedit(review: dict[str, Any], analysis: dict[str, Any] | None = Non
                 if not isinstance(item, dict):
                     raise ValueError(f"clip {index + 1} range {range_index} is malformed")
                 start = parse_time(item.get("in", item.get("start"))); end = parse_time(item.get("out", item.get("end")))
-                if start >= end or end > float(clip.get("duration_seconds", 0)):
+                if start >= end or end > float(duration):
                     raise ValueError(f"clip {index + 1} range {range_index} is invalid")
                 chosen.append((start, end, "human selected range"))
         elif editorial.get("keep") is True:
-            end = min(float(clip.get("duration_seconds", 0)), 4.0)
+            end = min(float(duration), 4.0)
             chosen = [(0.0, end, "human keep with conservative fallback")]
-        elif not rejected and float(clip.get("duration_seconds", 0)) >= 1.5:
-            end = min(float(clip.get("duration_seconds", 0)), 4.0)
+        elif not rejected and float(duration) >= 1.5:
+            end = min(float(duration), 4.0)
             signals = analysis_by_source.get(source, {}).get("signals", {})
             chosen = [(0.0, end, "automatic usable-duration fallback; no human decision")]
             if signals.get("audio_activity") == "none":

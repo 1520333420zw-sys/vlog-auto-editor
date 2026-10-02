@@ -7,6 +7,7 @@ from pathlib import Path
 from .plan import write_generated_plan
 from .analyze import analyze_manifest
 from .autoedit import plan_from_autoedit, write_autoedit
+from .finish import validate_finish_config
 from .proxy import generate_proxies
 from .render import render
 from .review import build_review_package
@@ -28,7 +29,7 @@ def main() -> int:
     analyze_parser = sub.add_parser("analyze"); analyze_parser.add_argument("--input", type=Path); analyze_parser.add_argument("--output", type=Path); analyze_parser.add_argument("--dry-run", action="store_true")
     transcribe_parser = sub.add_parser("transcribe"); transcribe_parser.add_argument("--output", type=Path); transcribe_parser.add_argument("--backend"); transcribe_parser.add_argument("--dry-run", action="store_true")
     autoedit_parser = sub.add_parser("autoedit"); autoedit_parser.add_argument("--review", type=Path); autoedit_parser.add_argument("--analysis", type=Path); autoedit_parser.add_argument("--output", type=Path); autoedit_parser.add_argument("--target-duration", type=float); autoedit_parser.add_argument("--dry-run", action="store_true")
-    build_parser = sub.add_parser("build"); build_parser.add_argument("--force", action="store_true"); build_parser.add_argument("--dry-run", action="store_true"); build_parser.add_argument("--target-duration", type=float)
+    build_parser = sub.add_parser("build"); build_parser.add_argument("--force", action="store_true"); build_parser.add_argument("--dry-run", action="store_true"); build_parser.add_argument("--target-duration", type=float); build_parser.add_argument("--transcribe", action="store_true"); build_parser.add_argument("--subtitles", action="store_true"); build_parser.add_argument("--config", type=Path)
     args = parser.parse_args(); workspace = args.workspace
     if args.command == "doctor":
         from .common import require_tool
@@ -58,15 +59,27 @@ def main() -> int:
         artifact = write_autoedit(args.review or workspace / "review" / "review_manifest.json", args.output or workspace / "project" / "autoedit.json", args.analysis or workspace / "analysis" / "media_analysis.json", args.target_duration, args.dry_run)
         if args.dry_run: print(json.dumps(artifact, ensure_ascii=False, indent=2))
     elif args.command == "build":
-        print("[1/5] scan")
-        scan(workspace / "raw", workspace / "manifests")
-        print("[2/5] review package")
-        build_review_package(workspace, args.force, args.dry_run)
+        config_path = args.config or workspace / "project" / "vlog_config.json"
+        config = validate_finish_config(json.loads(config_path.read_text(encoding="utf-8"))) if config_path.exists() else {}
+        transcribe_enabled = args.transcribe or config.get("auto_transcribe", False)
+        subtitles_enabled = args.subtitles or config.get("burn_subtitles", False)
+        manifest_path = workspace / "manifests" / "media_manifest.json"
+        review_path = workspace / "review" / "review_manifest.json"
+        if args.dry_run:
+            if not manifest_path.exists() or not review_path.exists():
+                raise FileNotFoundError("build --dry-run requires existing manifests/review artifacts and will not create them")
+            print("[dry-run] using existing scan and review artifacts")
+        else:
+            print("[1/5] scan")
+            scan(workspace / "raw", workspace / "manifests")
+            print("[2/5] review package")
+            build_review_package(workspace, args.force, False)
         print("[3/5] analyze")
         analyze_manifest(workspace / "manifests" / "media_manifest.json", workspace, workspace / "analysis" / "media_analysis.json", args.dry_run)
         print("[4/5] automatic decisions")
-        artifact = write_autoedit(workspace / "review" / "review_manifest.json", workspace / "project" / "autoedit.json", workspace / "analysis" / "media_analysis.json", args.target_duration, args.dry_run)
+        artifact = write_autoedit(review_path, workspace / "project" / "autoedit.json", workspace / "analysis" / "media_analysis.json", args.target_duration, args.dry_run)
         plan = plan_from_autoedit(artifact)
+        plan["audio_normalization"] = config.get("audio_normalization", False)
         if args.dry_run:
             print(json.dumps(plan, ensure_ascii=False, indent=2))
         else:
@@ -74,4 +87,22 @@ def main() -> int:
             plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             print("[5/5] render")
             render(plan_path, workspace, False)
+        transcript_path = workspace / "transcript" / "transcript.json"
+        if transcribe_enabled:
+            print("[optional] transcribe")
+            from .transcript import transcribe
+            transcribe(transcript_path, config.get("transcription_backend"), args.dry_run)
+        else:
+            print("[optional] transcribe skipped (not configured)")
+        if subtitles_enabled:
+            if not transcript_path.exists():
+                raise FileNotFoundError("Subtitle generation was requested, but no transcript.json exists")
+            if args.dry_run:
+                print("[optional] subtitles would be generated from transcript.json")
+            else:
+                from .transcript import subtitle_source
+                subtitle_input = subtitle_source(transcript_path)
+                write_subtitles(subtitle_input, workspace / "subtitles")
+        else:
+            print("[optional] subtitles skipped (not configured)")
     return 0

@@ -6,6 +6,7 @@ import tempfile
 from pathlib import Path
 
 from .common import parse_time, require_tool, resolve_workspace_path, run_json_command
+from .audio import normalization_filter
 
 
 def validate_plan(plan: dict) -> None:
@@ -32,9 +33,11 @@ def audio_filter(clip: dict) -> str:
     return f"volume={gain}dB" if gain else "anull"
 
 
-def build_filter(index: int, clip: dict, width: int, height: int, fps: int, output_index: int | None = None) -> str:
+def build_filter(index: int, clip: dict, width: int, height: int, fps: int, output_index: int | None = None, normalize_audio: bool = False) -> str:
     label_index = index if output_index is None else output_index
     audio = audio_filter(clip)
+    if normalize_audio:
+        audio = f"{audio},{normalization_filter()}"
     return f"[{index}:v]scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,fps={fps},format=yuv420p[v{label_index}];[{index}:a]{audio}[a{label_index}]"
 
 
@@ -42,6 +45,9 @@ def render(project: Path, workspace: Path, dry_run: bool = False) -> list[str]:
     plan = json.loads(project.read_text(encoding="utf-8")); validate_plan(plan)
     require_tool("ffmpeg")
     settings = plan.get("video", {}); width = settings.get("width", 1920); height = settings.get("height", 1080); fps = settings.get("fps", 30)
+    normalize_audio = plan.get("audio_normalization", False)
+    if not isinstance(normalize_audio, bool):
+        raise ValueError("audio_normalization must be boolean")
     output = resolve_workspace_path(plan.get("output", "workspace/output/VLOG_01_V1.mp4"), workspace)
     output.parent.mkdir(parents=True, exist_ok=True)
     command = ["ffmpeg", "-y"]
@@ -58,7 +64,7 @@ def render(project: Path, workspace: Path, dry_run: bool = False) -> list[str]:
             command += ["-f", "lavfi", "-t", str(parse_time(clip["out"]) - parse_time(clip["in"])), "-i", "anullsrc=channel_layout=stereo:sample_rate=48000"]
             audio_index = input_index + 1
             input_index += 1
-        filters.append(build_filter(video_index, clip, width, height, fps, i).replace(f"[{video_index}:a]", f"[{audio_index}:a]"))
+        filters.append(build_filter(video_index, clip, width, height, fps, i, normalize_audio).replace(f"[{video_index}:a]", f"[{audio_index}:a]"))
         input_index += 1
     concat_inputs = "".join(f"[v{i}][a{i}]" for i in range(len(filters)))
     filters.append(f"{concat_inputs}concat=n={len(filters)}:v=1:a=1[vout][aout]")

@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 import pytest
+import sys
 
 from vlog_editor.autoedit import build_autoedit, plan_from_autoedit
 from vlog_editor.finish import validate_finish_config
@@ -50,3 +51,28 @@ def test_finish_config_is_strict():
     assert validate_finish_config({"audio_normalization": True})["audio_normalization"] is True
     with pytest.raises(ValueError):
         validate_finish_config({"magic": True})
+
+
+@pytest.mark.parametrize("duration", [True, 0, -1, "bad"])
+def test_autoedit_rejects_invalid_durations(duration):
+    bad = review(keep=True)
+    bad["clips"][0]["duration_seconds"] = duration
+    with pytest.raises(ValueError, match="duration_seconds"):
+        build_autoedit(bad)
+
+
+def test_build_dry_run_does_not_write_workspace(monkeypatch, tmp_path):
+    from vlog_editor import cli
+
+    workspace = tmp_path / "workspace"
+    (workspace / "manifests").mkdir(parents=True)
+    (workspace / "review").mkdir(parents=True)
+    (workspace / "manifests" / "media_manifest.json").write_text("[]", encoding="utf-8")
+    (workspace / "review" / "review_manifest.json").write_text("{}", encoding="utf-8")
+    before = {path.relative_to(workspace): path.read_bytes() for path in workspace.rglob("*") if path.is_file()}
+    monkeypatch.setattr(cli, "analyze_manifest", lambda *args, **kwargs: {})
+    monkeypatch.setattr(cli, "write_autoedit", lambda *args, **kwargs: {"decisions": [{"source": "clip.mp4", "suggested_in": 0, "suggested_out": 1, "reasons": []}]})
+    monkeypatch.setattr(sys, "argv", ["vlog-editor", "--workspace", str(workspace), "build", "--dry-run"])
+    assert cli.main() == 0
+    after = {path.relative_to(workspace): path.read_bytes() for path in workspace.rglob("*") if path.is_file()}
+    assert after == before

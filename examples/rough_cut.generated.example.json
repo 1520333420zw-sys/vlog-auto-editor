@@ -1,0 +1,27 @@
+{
+  "output": "workspace/output/VLOG_01_V1.mp4",
+  "video": {
+    "width": 1920,
+    "height": 1080,
+    "fps": 30
+  },
+  "clips": [
+    {
+      "source": "workspace/raw/day-01/IMG_0001.MOV",
+      "in": 2,
+      "out": 5.5,
+      "audio": "source",
+      "note": "Opening study detail",
+      "display_id": "C001",
+      "clip_id": "clip_0123456789ab"
+    },
+    {
+      "source": "workspace/raw/day-01/IMG_0002.MOV",
+      "in": 0,
+      "out": 4,
+      "audio": "source",
+      "display_id": "C002",
+      "clip_id": "clip_abcdef012345"
+    }
+  ]
+}
